@@ -41,6 +41,17 @@
             <textarea id="instructions" name="instructions" rows="3" placeholder="Системная инструкция"></textarea>
           </section>
 
+          <section class="experts-panel" aria-labelledby="expertsTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Experts</p>
+                <h2 id="expertsTitle">Группа экспертов</h2>
+              </div>
+              <button class="ghost-button compact" id="addExpert" type="button">Добавить</button>
+            </div>
+            <div class="expert-list" id="expertList"></div>
+          </section>
+
           <section class="control-group">
             <label for="prompt">Prompt</label>
             <textarea id="prompt" name="prompt" rows="5" placeholder="Запрос для модели">Сравни температуру 0.2 и 1.0 на примере короткой идеи для стартапа.</textarea>

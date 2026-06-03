@@ -3,6 +3,8 @@ const apiKeyInput = document.querySelector("#apiKey");
 const modelInput = document.querySelector("#model");
 const customModelInput = document.querySelector("#customModel");
 const instructionsInput = document.querySelector("#instructions");
+const expertList = document.querySelector("#expertList");
+const addExpertButton = document.querySelector("#addExpert");
 const promptInput = document.querySelector("#prompt");
 const temperatureInput = document.querySelector("#temperature");
 const topPInput = document.querySelector("#topP");
@@ -31,6 +33,21 @@ const sliders = [
 
 let lastResponse = null;
 let responseMode = "json";
+const defaultExperts = [
+  {
+    role: "Аналитик",
+    focus: "Оцени рынок, риски, метрики и бизнес-эффект."
+  },
+  {
+    role: "Инженер",
+    focus: "Оцени реализацию, ограничения, архитектуру и технические риски."
+  },
+  {
+    role: "Критик",
+    focus: "Найди слабые места, спорные допущения и что нужно проверить."
+  }
+];
+let experts = defaultExperts.map((expert) => ({ ...expert }));
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
@@ -66,9 +83,34 @@ function getSelectedModel() {
   return modelInput.value;
 }
 
+function buildExpertsInstructions() {
+  const activeExperts = experts
+    .map((expert) => ({
+      role: expert.role.trim(),
+      focus: expert.focus.trim()
+    }))
+    .filter((expert) => expert.role || expert.focus);
+
+  if (!activeExperts.length) return "";
+
+  const expertLines = activeExperts.map((expert, index) => {
+    const role = expert.role || `Эксперт ${index + 1}`;
+    const focus = expert.focus || "Дай независимую оценку запроса.";
+    return `${index + 1}. ${role}: ${focus}`;
+  });
+
+  return [
+    "Ответь как группа экспертов.",
+    "Сначала дай короткий общий вывод, затем отдельные секции по каждому эксперту, затем финальный консенсус.",
+    "Состав группы:",
+    ...expertLines
+  ].join("\n");
+}
+
 function buildRequestBody() {
   const model = getSelectedModel();
   const instructions = instructionsInput.value.trim();
+  const expertsInstructions = buildExpertsInstructions();
   const prompt = promptInput.value.trim();
   const extraJson = parseExtraJson();
   const requestBody = {
@@ -82,8 +124,8 @@ function buildRequestBody() {
     ...extraJson
   };
 
-  if (instructions) {
-    requestBody.instructions = instructions;
+  if (instructions || expertsInstructions) {
+    requestBody.instructions = [instructions, expertsInstructions].filter(Boolean).join("\n\n");
   }
 
   if (reasoningEffortInput.value) {
@@ -164,12 +206,58 @@ async function copyText(text) {
 function resetForm() {
   form.reset();
   customModelInput.classList.add("hidden");
+  experts = defaultExperts.map((expert) => ({ ...expert }));
   lastResponse = null;
   responseMode = "json";
   toggleParsedButton.textContent = "Текст";
+  renderExperts();
   syncSliderLabels();
   updateRequestPreview();
   updateResponsePreview();
+}
+
+function renderExperts() {
+  expertList.innerHTML = "";
+
+  experts.forEach((expert, index) => {
+    const row = document.createElement("div");
+    row.className = "expert-row";
+
+    const roleInput = document.createElement("input");
+    roleInput.type = "text";
+    roleInput.value = expert.role;
+    roleInput.placeholder = "Роль";
+    roleInput.setAttribute("aria-label", "Роль эксперта");
+    roleInput.addEventListener("input", () => {
+      experts[index].role = roleInput.value;
+      updateRequestPreview();
+    });
+
+    const focusInput = document.createElement("textarea");
+    focusInput.rows = 2;
+    focusInput.value = expert.focus;
+    focusInput.placeholder = "Фокус эксперта";
+    focusInput.setAttribute("aria-label", "Фокус эксперта");
+    focusInput.addEventListener("input", () => {
+      experts[index].focus = focusInput.value;
+      updateRequestPreview();
+    });
+
+    const removeButton = document.createElement("button");
+    removeButton.className = "icon-button remove-expert";
+    removeButton.type = "button";
+    removeButton.title = "Удалить эксперта";
+    removeButton.setAttribute("aria-label", "Удалить эксперта");
+    removeButton.textContent = "×";
+    removeButton.addEventListener("click", () => {
+      experts.splice(index, 1);
+      renderExperts();
+      updateRequestPreview();
+    });
+
+    row.append(roleInput, focusInput, removeButton);
+    expertList.append(row);
+  });
 }
 
 function syncSliderLabels() {
@@ -253,6 +341,17 @@ modelInput.addEventListener("change", () => {
   }
 });
 
+addExpertButton.addEventListener("click", () => {
+  experts.push({
+    role: "",
+    focus: ""
+  });
+  renderExperts();
+  updateRequestPreview();
+  const newestRoleInput = expertList.querySelector(".expert-row:last-child input");
+  newestRoleInput?.focus();
+});
+
 toggleParsedButton.addEventListener("click", () => {
   responseMode = responseMode === "json" ? "text" : "json";
   toggleParsedButton.textContent = responseMode === "json" ? "Текст" : "JSON";
@@ -270,6 +369,7 @@ copyResponseButton.addEventListener("click", async () => {
 resetButton.addEventListener("click", resetForm);
 form.addEventListener("submit", sendRequest);
 
+renderExperts();
 syncSliderLabels();
 updateRequestPreview();
 updateResponsePreview();
