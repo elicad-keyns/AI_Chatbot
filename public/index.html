@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>OpenAI API Parameter Lab</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="settings-panel">
+        <div class="brand-row">
+          <div>
+            <p class="eyebrow">OpenAI API</p>
+            <h1>Parameter Lab</h1>
+          </div>
+          <span class="status-pill" id="statusPill">готов</span>
+        </div>
+
+        <form id="settingsForm" class="settings-form">
+          <section class="control-group">
+            <label for="apiKey">API key</label>
+            <input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="sk-..." spellcheck="false">
+          </section>
+
+          <section class="control-group">
+            <label for="model">Модель</label>
+            <select id="model" name="model">
+              <option value="gpt-5.5">gpt-5.5</option>
+              <option value="gpt-5.5-mini">gpt-5.5-mini</option>
+              <option value="gpt-5.5-nano">gpt-5.5-nano</option>
+              <option value="gpt-5.1">gpt-5.1</option>
+              <option value="gpt-4.1">gpt-4.1</option>
+              <option value="custom">custom</option>
+            </select>
+            <input id="customModel" class="hidden" name="customModel" type="text" placeholder="model-id" spellcheck="false">
+          </section>
+
+          <section class="control-group">
+            <label for="instructions">Instructions</label>
+            <textarea id="instructions" name="instructions" rows="3" placeholder="Системная инструкция"></textarea>
+          </section>
+
+          <section class="control-group">
+            <label for="prompt">Prompt</label>
+            <textarea id="prompt" name="prompt" rows="5" placeholder="Запрос для модели">Сравни температуру 0.2 и 1.0 на примере короткой идеи для стартапа.</textarea>
+          </section>
+
+          <section class="slider-grid">
+            <label class="slider-row" for="temperature">
+              <span>temperature</span>
+              <output id="temperatureValue">0.70</output>
+              <input id="temperature" name="temperature" type="range" min="0" max="2" step="0.01" value="0.7">
+            </label>
+
+            <label class="slider-row" for="topP">
+              <span>top_p</span>
+              <output id="topPValue">1.00</output>
+              <input id="topP" name="topP" type="range" min="0" max="1" step="0.01" value="1">
+            </label>
+
+            <label class="slider-row" for="presencePenalty">
+              <span>presence_penalty</span>
+              <output id="presencePenaltyValue">0.00</output>
+              <input id="presencePenalty" name="presencePenalty" type="range" min="-2" max="2" step="0.01" value="0">
+            </label>
+
+            <label class="slider-row" for="frequencyPenalty">
+              <span>frequency_penalty</span>
+              <output id="frequencyPenaltyValue">0.00</output>
+              <input id="frequencyPenalty" name="frequencyPenalty" type="range" min="-2" max="2" step="0.01" value="0">
+            </label>
+          </section>
+
+          <section class="number-grid">
+            <label for="maxOutputTokens">
+              <span>max_output_tokens</span>
+              <input id="maxOutputTokens" name="maxOutputTokens" type="number" min="1" max="20000" step="1" value="800">
+            </label>
+
+            <label for="topK">
+              <span>top_k</span>
+              <input id="topK" name="topK" type="number" min="1" step="1" placeholder="extra">
+            </label>
+
+            <label for="topV">
+              <span>top_v</span>
+              <input id="topV" name="topV" type="number" min="0" step="0.01" placeholder="extra">
+            </label>
+          </section>
+
+          <section class="control-group">
+            <label for="reasoningEffort">reasoning.effort</label>
+            <select id="reasoningEffort" name="reasoningEffort">
+              <option value="">не отправлять</option>
+              <option value="minimal">minimal</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+            </select>
+          </section>
+
+          <section class="control-group">
+            <label for="extraJson">Extra JSON</label>
+            <textarea id="extraJson" name="extraJson" rows="4" spellcheck="false" placeholder='{"metadata":{"test":"a"}}'></textarea>
+          </section>
+
+          <div class="button-row">
+            <button class="primary-button" id="sendButton" type="submit">Запустить</button>
+            <button class="ghost-button" id="resetButton" type="button">Сброс</button>
+          </div>
+        </form>
+      </aside>
+
+      <section class="workspace">
+        <div class="pane-grid">
+          <article class="json-pane">
+            <header class="pane-header">
+              <div>
+                <p class="eyebrow">Request</p>
+                <h2>JSON запроса</h2>
+              </div>
+              <button class="icon-button" id="copyRequest" type="button" title="Скопировать request JSON" aria-label="Скопировать request JSON">⧉</button>
+            </header>
+            <pre id="requestPreview" class="code-block"></pre>
+          </article>
+
+          <article class="json-pane">
+            <header class="pane-header">
+              <div>
+                <p class="eyebrow">Response</p>
+                <h2>Ответ</h2>
+              </div>
+              <div class="pane-actions">
+                <button class="ghost-button compact" id="toggleParsed" type="button">Текст</button>
+                <button class="icon-button" id="copyResponse" type="button" title="Скопировать ответ" aria-label="Скопировать ответ">⧉</button>
+              </div>
+            </header>
+            <pre id="responsePreview" class="code-block muted"></pre>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

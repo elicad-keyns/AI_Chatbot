@@ -1,0 +1,19 @@
+{
+  "name": "openai-api-parameter-lab",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Simple Railway-ready OpenAI API parameter testing UI.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "openai",
+    "api",
+    "railway"
+  ],
+  "license": "MIT"
+}
