@@ -21,6 +21,11 @@ const reasoningHint = document.querySelector("#reasoningHint");
 const extraJsonInput = document.querySelector("#extraJson");
 const requestPreview = document.querySelector("#requestPreview");
 const responsePreview = document.querySelector("#responsePreview");
+const metricLatency = document.querySelector("#metricLatency");
+const metricInputTokens = document.querySelector("#metricInputTokens");
+const metricOutputTokens = document.querySelector("#metricOutputTokens");
+const metricTotalTokens = document.querySelector("#metricTotalTokens");
+const metricCost = document.querySelector("#metricCost");
 const statusPill = document.querySelector("#statusPill");
 const sendButton = document.querySelector("#sendButton");
 const resetButton = document.querySelector("#resetButton");
@@ -117,6 +122,35 @@ const modelProfiles = {
   }
 };
 
+const modelPricing = {
+  "gpt-5.5": { input: 5, cachedInput: 0.5, output: 30 },
+  "gpt-5.4": { input: 2.5, cachedInput: 0.25, output: 15 },
+  "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output: 4.5 },
+  "gpt-5.2": { input: 1.75, cachedInput: 0.175, output: 14 },
+  "gpt-5.2-chat-latest": { input: 1.75, cachedInput: 0.175, output: 14 },
+  "gpt-5.2-codex": { input: 1.75, cachedInput: 0.175, output: 14 },
+  "gpt-5.2-pro": { input: 21, cachedInput: null, output: 168 },
+  "gpt-5.1": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5.1-chat-latest": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5.1-codex": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5.1-codex-max": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5-chat-latest": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5-codex": { input: 1.25, cachedInput: 0.125, output: 10 },
+  "gpt-5-mini": { input: 0.25, cachedInput: 0.025, output: 2 },
+  "gpt-5-nano": { input: 0.05, cachedInput: 0.005, output: 0.4 },
+  "gpt-5-pro": { input: 15, cachedInput: null, output: 120 },
+  "gpt-4.1": { input: 2, cachedInput: 0.5, output: 8 },
+  "gpt-4.1-mini": { input: 0.4, cachedInput: 0.1, output: 1.6 },
+  "gpt-4.1-nano": { input: 0.1, cachedInput: 0.025, output: 0.4 },
+  "gpt-4o": { input: 2.5, cachedInput: 1.25, output: 10 },
+  "gpt-4o-mini": { input: 0.15, cachedInput: 0.075, output: 0.6 },
+  o3: { input: 2, cachedInput: 0.5, output: 8 },
+  "o3-mini": { input: 1.1, cachedInput: 0.55, output: 4.4 },
+  "o3-pro": { input: 20, cachedInput: null, output: 80 },
+  "o4-mini": { input: 1.1, cachedInput: 0.275, output: 4.4 }
+};
+
 const defaultExperts = [
   {
     role: "Аналитик",
@@ -180,6 +214,10 @@ function getSelectedModel() {
 
 function getProfile() {
   return modelProfiles[modelInput.value] || modelProfiles.custom;
+}
+
+function getPricing() {
+  return modelPricing[getSelectedModel()] || null;
 }
 
 function getEffectiveReasoningEffort() {
@@ -297,6 +335,76 @@ function extractOutputText(payload) {
   return chunks.join("\n").trim() || "Текст не найден в ответе.";
 }
 
+function formatTokens(value) {
+  return Number.isFinite(value) ? value.toLocaleString("ru-RU") : "-";
+}
+
+function formatLatency(ms) {
+  if (!Number.isFinite(ms)) return "-";
+  return ms >= 1000 ? `${(ms / 1000).toFixed(2)} с` : `${Math.round(ms)} мс`;
+}
+
+function formatCost(value) {
+  if (!Number.isFinite(value)) return "нет цены";
+  if (value === 0) return "$0.000000";
+  if (value < 0.000001) return "< $0.000001";
+  return `$${value.toFixed(6)}`;
+}
+
+function getUsageFromResponse(payload) {
+  return payload?.data?.usage || payload?.usage || null;
+}
+
+function getCachedInputTokens(usage) {
+  return usage?.input_tokens_details?.cached_tokens
+    || usage?.prompt_tokens_details?.cached_tokens
+    || 0;
+}
+
+function estimateCost(usage) {
+  const pricing = getPricing();
+  if (!pricing || !usage) return null;
+
+  const inputTokens = usage.input_tokens || usage.prompt_tokens || 0;
+  const outputTokens = usage.output_tokens || usage.completion_tokens || 0;
+  const cachedTokens = Math.min(getCachedInputTokens(usage), inputTokens);
+  const uncachedInputTokens = Math.max(inputTokens - cachedTokens, 0);
+  const cachedInputPrice = pricing.cachedInput ?? pricing.input;
+
+  return (
+    (uncachedInputTokens * pricing.input)
+    + (cachedTokens * cachedInputPrice)
+    + (outputTokens * pricing.output)
+  ) / 1_000_000;
+}
+
+function updateMetrics(payload, latencyMs) {
+  const usage = getUsageFromResponse(payload);
+  const inputTokens = usage?.input_tokens || usage?.prompt_tokens;
+  const outputTokens = usage?.output_tokens || usage?.completion_tokens;
+  const totalTokens = usage?.total_tokens
+    || (Number(inputTokens || 0) + Number(outputTokens || 0));
+  const cost = estimateCost(usage);
+
+  metricLatency.textContent = formatLatency(latencyMs);
+  metricInputTokens.textContent = formatTokens(inputTokens);
+  metricOutputTokens.textContent = formatTokens(outputTokens);
+  metricTotalTokens.textContent = formatTokens(totalTokens);
+  metricCost.textContent = !usage
+    ? "нет данных"
+    : cost === null
+      ? "нет цены"
+      : `≈ ${formatCost(cost)}`;
+}
+
+function resetMetrics() {
+  metricLatency.textContent = "-";
+  metricInputTokens.textContent = "-";
+  metricOutputTokens.textContent = "-";
+  metricTotalTokens.textContent = "-";
+  metricCost.textContent = "-";
+}
+
 function setInputEnabled(input, enabled) {
   input.disabled = !enabled;
   input.closest("label")?.classList.toggle("control-disabled", !enabled);
@@ -382,6 +490,7 @@ function resetForm() {
   responseMode = "json";
   toggleParsedButton.textContent = "Текст";
   renderExperts();
+  resetMetrics();
   updateRequestPreview();
   updateResponsePreview();
 }
@@ -447,8 +556,10 @@ async function sendRequest(event) {
   sendButton.disabled = true;
   setStatus("запрос", "loading");
   responsePreview.textContent = "Выполняется запрос...";
+  resetMetrics();
 
   try {
+    const startedAt = performance.now();
     const response = await fetch("/api/openai", {
       method: "POST",
       headers: {
@@ -459,8 +570,10 @@ async function sendRequest(event) {
         requestBody
       })
     });
+    const latencyMs = performance.now() - startedAt;
 
     lastResponse = await response.json();
+    updateMetrics(lastResponse, latencyMs);
     responseMode = "json";
     toggleParsedButton.textContent = "Текст";
     updateResponsePreview();
@@ -525,5 +638,6 @@ resetButton.addEventListener("click", resetForm);
 form.addEventListener("submit", sendRequest);
 
 renderExperts();
+resetMetrics();
 updateRequestPreview();
 updateResponsePreview();

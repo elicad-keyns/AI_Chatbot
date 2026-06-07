@@ -172,6 +172,29 @@
       </aside>
 
       <section class="workspace">
+        <section class="metrics-strip" aria-label="Метрики запроса">
+          <div class="metric-card">
+            <span>Время</span>
+            <strong id="metricLatency">-</strong>
+          </div>
+          <div class="metric-card">
+            <span>Input tokens</span>
+            <strong id="metricInputTokens">-</strong>
+          </div>
+          <div class="metric-card">
+            <span>Output tokens</span>
+            <strong id="metricOutputTokens">-</strong>
+          </div>
+          <div class="metric-card">
+            <span>Total tokens</span>
+            <strong id="metricTotalTokens">-</strong>
+          </div>
+          <div class="metric-card wide">
+            <span>Стоимость</span>
+            <strong id="metricCost">-</strong>
+          </div>
+        </section>
+
         <div class="pane-grid">
           <article class="json-pane">
             <header class="pane-header">
