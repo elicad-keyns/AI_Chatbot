@@ -27,6 +27,8 @@
             <label for="model">Модель</label>
             <select id="model" name="model">
               <option value="gpt-5.5">gpt-5.5</option>
+              <option value="gpt-5.4">gpt-5.4</option>
+              <option value="gpt-5.2">gpt-5.2</option>
               <option value="gpt-5.5-mini">gpt-5.5-mini</option>
               <option value="gpt-5.5-nano">gpt-5.5-nano</option>
               <option value="gpt-5.1">gpt-5.1</option>
@@ -34,6 +36,7 @@
               <option value="custom">custom</option>
             </select>
             <input id="customModel" class="hidden" name="customModel" type="text" placeholder="model-id" spellcheck="false">
+            <p class="field-note" id="modelSupportHint"></p>
           </section>
 
           <section class="control-group">
@@ -49,6 +52,10 @@
               </div>
               <button class="ghost-button compact" id="addExpert" type="button">Добавить</button>
             </div>
+            <label class="switch-row" for="useExperts">
+              <input id="useExperts" name="useExperts" type="checkbox">
+              <span>Использовать в запросе</span>
+            </label>
             <div class="expert-list" id="expertList"></div>
           </section>
 
@@ -57,46 +64,56 @@
             <textarea id="prompt" name="prompt" rows="5" placeholder="Запрос для модели">Сравни температуру 0.2 и 1.0 на примере короткой идеи для стартапа.</textarea>
           </section>
 
-          <section class="slider-grid">
-            <label class="slider-row" for="temperature">
+          <section class="parameter-grid">
+            <label class="parameter-card" for="temperature" data-param-card="temperature">
               <span>temperature</span>
-              <output id="temperatureValue">0.70</output>
-              <input id="temperature" name="temperature" type="range" min="0" max="2" step="0.01" value="0.7">
+              <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.01" placeholder="не отправлять">
+              <small id="temperatureNote"></small>
             </label>
 
-            <label class="slider-row" for="topP">
+            <label class="parameter-card" for="topP" data-param-card="top_p">
               <span>top_p</span>
-              <output id="topPValue">1.00</output>
-              <input id="topP" name="topP" type="range" min="0" max="1" step="0.01" value="1">
+              <input id="topP" name="topP" type="number" min="0" max="1" step="0.01" placeholder="не отправлять">
+              <small id="topPNote"></small>
             </label>
 
-            <label class="slider-row" for="presencePenalty">
+            <label class="parameter-card" for="presencePenalty" data-param-card="presence_penalty">
               <span>presence_penalty</span>
-              <output id="presencePenaltyValue">0.00</output>
-              <input id="presencePenalty" name="presencePenalty" type="range" min="-2" max="2" step="0.01" value="0">
+              <input id="presencePenalty" name="presencePenalty" type="number" min="-2" max="2" step="0.01" placeholder="не поддерживается">
+              <small id="presencePenaltyNote"></small>
             </label>
 
-            <label class="slider-row" for="frequencyPenalty">
+            <label class="parameter-card" for="frequencyPenalty" data-param-card="frequency_penalty">
               <span>frequency_penalty</span>
-              <output id="frequencyPenaltyValue">0.00</output>
-              <input id="frequencyPenalty" name="frequencyPenalty" type="range" min="-2" max="2" step="0.01" value="0">
+              <input id="frequencyPenalty" name="frequencyPenalty" type="number" min="-2" max="2" step="0.01" placeholder="не поддерживается">
+              <small id="frequencyPenaltyNote"></small>
             </label>
           </section>
 
           <section class="number-grid">
             <label for="maxOutputTokens">
               <span>max_output_tokens</span>
-              <input id="maxOutputTokens" name="maxOutputTokens" type="number" min="1" max="20000" step="1" value="800">
+              <input id="maxOutputTokens" name="maxOutputTokens" type="number" min="1" max="20000" step="1" placeholder="не отправлять">
+            </label>
+
+            <label for="textVerbosity">
+              <span>text.verbosity</span>
+              <select id="textVerbosity" name="textVerbosity">
+                <option value="">не отправлять</option>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+              </select>
             </label>
 
             <label for="topK">
               <span>top_k</span>
-              <input id="topK" name="topK" type="number" min="1" step="1" placeholder="extra">
+              <input id="topK" name="topK" type="number" min="1" step="1" placeholder="не поддерживается" disabled>
             </label>
 
             <label for="topV">
               <span>top_v</span>
-              <input id="topV" name="topV" type="number" min="0" step="0.01" placeholder="extra">
+              <input id="topV" name="topV" type="number" min="0" step="0.01" placeholder="не поддерживается" disabled>
             </label>
           </section>
 
@@ -104,11 +121,14 @@
             <label for="reasoningEffort">reasoning.effort</label>
             <select id="reasoningEffort" name="reasoningEffort">
               <option value="">не отправлять</option>
+              <option value="none">none</option>
               <option value="minimal">minimal</option>
               <option value="low">low</option>
               <option value="medium">medium</option>
               <option value="high">high</option>
+              <option value="xhigh">xhigh</option>
             </select>
+            <p class="field-note" id="reasoningHint"></p>
           </section>
 
           <section class="control-group">

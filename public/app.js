@@ -2,7 +2,9 @@ const form = document.querySelector("#settingsForm");
 const apiKeyInput = document.querySelector("#apiKey");
 const modelInput = document.querySelector("#model");
 const customModelInput = document.querySelector("#customModel");
+const modelSupportHint = document.querySelector("#modelSupportHint");
 const instructionsInput = document.querySelector("#instructions");
+const useExpertsInput = document.querySelector("#useExperts");
 const expertList = document.querySelector("#expertList");
 const addExpertButton = document.querySelector("#addExpert");
 const promptInput = document.querySelector("#prompt");
@@ -11,9 +13,11 @@ const topPInput = document.querySelector("#topP");
 const presencePenaltyInput = document.querySelector("#presencePenalty");
 const frequencyPenaltyInput = document.querySelector("#frequencyPenalty");
 const maxOutputTokensInput = document.querySelector("#maxOutputTokens");
+const textVerbosityInput = document.querySelector("#textVerbosity");
 const topKInput = document.querySelector("#topK");
 const topVInput = document.querySelector("#topV");
 const reasoningEffortInput = document.querySelector("#reasoningEffort");
+const reasoningHint = document.querySelector("#reasoningHint");
 const extraJsonInput = document.querySelector("#extraJson");
 const requestPreview = document.querySelector("#requestPreview");
 const responsePreview = document.querySelector("#responsePreview");
@@ -24,15 +28,84 @@ const toggleParsedButton = document.querySelector("#toggleParsed");
 const copyRequestButton = document.querySelector("#copyRequest");
 const copyResponseButton = document.querySelector("#copyResponse");
 
-const sliders = [
-  [temperatureInput, document.querySelector("#temperatureValue")],
-  [topPInput, document.querySelector("#topPValue")],
-  [presencePenaltyInput, document.querySelector("#presencePenaltyValue")],
-  [frequencyPenaltyInput, document.querySelector("#frequencyPenaltyValue")]
+const parameterInputs = [
+  temperatureInput,
+  topPInput,
+  presencePenaltyInput,
+  frequencyPenaltyInput,
+  maxOutputTokensInput,
+  textVerbosityInput,
+  topKInput,
+  topVInput,
+  reasoningEffortInput
 ];
 
-let lastResponse = null;
-let responseMode = "json";
+const parameterNotes = {
+  temperature: document.querySelector("#temperatureNote"),
+  top_p: document.querySelector("#topPNote"),
+  presence_penalty: document.querySelector("#presencePenaltyNote"),
+  frequency_penalty: document.querySelector("#frequencyPenaltyNote")
+};
+
+const modelProfiles = {
+  "gpt-5.5": {
+    family: "gpt-5.5",
+    defaultReasoning: "medium",
+    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    samplingRequiresReasoningNone: true,
+    supportsSampling: true
+  },
+  "gpt-5.4": {
+    family: "gpt-5.4",
+    defaultReasoning: "medium",
+    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    samplingRequiresReasoningNone: true,
+    supportsSampling: true
+  },
+  "gpt-5.2": {
+    family: "gpt-5.2",
+    defaultReasoning: "medium",
+    reasoningEfforts: ["none", "low", "medium", "high"],
+    samplingRequiresReasoningNone: true,
+    supportsSampling: true
+  },
+  "gpt-5.5-mini": {
+    family: "gpt-5.5",
+    defaultReasoning: "medium",
+    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    samplingRequiresReasoningNone: true,
+    supportsSampling: true
+  },
+  "gpt-5.5-nano": {
+    family: "gpt-5.5",
+    defaultReasoning: "medium",
+    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+    samplingRequiresReasoningNone: true,
+    supportsSampling: true
+  },
+  "gpt-5.1": {
+    family: "gpt-5.1",
+    defaultReasoning: "none",
+    reasoningEfforts: ["none", "low", "medium", "high"],
+    samplingRequiresReasoningNone: true,
+    supportsSampling: true
+  },
+  "gpt-4.1": {
+    family: "gpt-4.1",
+    defaultReasoning: null,
+    reasoningEfforts: [],
+    samplingRequiresReasoningNone: false,
+    supportsSampling: true
+  },
+  custom: {
+    family: "custom",
+    defaultReasoning: null,
+    reasoningEfforts: [],
+    samplingRequiresReasoningNone: false,
+    supportsSampling: true
+  }
+};
+
 const defaultExperts = [
   {
     role: "Аналитик",
@@ -47,7 +120,10 @@ const defaultExperts = [
     focus: "Найди слабые места, спорные допущения и что нужно проверить."
   }
 ];
+
 let experts = defaultExperts.map((expert) => ({ ...expert }));
+let lastResponse = null;
+let responseMode = "json";
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
@@ -76,6 +152,14 @@ function parseExtraJson() {
   return parsed;
 }
 
+function hasValue(input) {
+  return String(input.value).trim() !== "";
+}
+
+function numericValue(input) {
+  return Number(input.value);
+}
+
 function getSelectedModel() {
   if (modelInput.value === "custom") {
     return customModelInput.value.trim();
@@ -83,7 +167,25 @@ function getSelectedModel() {
   return modelInput.value;
 }
 
+function getProfile() {
+  return modelProfiles[modelInput.value] || modelProfiles.custom;
+}
+
+function getEffectiveReasoningEffort() {
+  const profile = getProfile();
+  return reasoningEffortInput.value || profile.defaultReasoning || "";
+}
+
+function canUseSampling() {
+  const profile = getProfile();
+  if (!profile.supportsSampling) return false;
+  if (!profile.samplingRequiresReasoningNone) return true;
+  return getEffectiveReasoningEffort() === "none";
+}
+
 function buildExpertsInstructions() {
+  if (!useExpertsInput.checked) return "";
+
   const activeExperts = experts
     .map((expert) => ({
       role: expert.role.trim(),
@@ -113,37 +215,43 @@ function buildRequestBody() {
   const expertsInstructions = buildExpertsInstructions();
   const prompt = promptInput.value.trim();
   const extraJson = parseExtraJson();
+  const profile = getProfile();
   const requestBody = {
     model,
-    input: prompt,
-    temperature: Number(temperatureInput.value),
-    top_p: Number(topPInput.value),
-    max_output_tokens: Number(maxOutputTokensInput.value),
-    presence_penalty: Number(presencePenaltyInput.value),
-    frequency_penalty: Number(frequencyPenaltyInput.value),
-    ...extraJson
+    input: prompt
   };
 
   if (instructions || expertsInstructions) {
     requestBody.instructions = [instructions, expertsInstructions].filter(Boolean).join("\n\n");
   }
 
-  if (reasoningEffortInput.value) {
+  if (profile.reasoningEfforts.length && reasoningEffortInput.value) {
     requestBody.reasoning = {
       ...(requestBody.reasoning || {}),
       effort: reasoningEffortInput.value
     };
   }
 
-  if (topKInput.value.trim()) {
-    requestBody.top_k = Number(topKInput.value);
+  if (hasValue(maxOutputTokensInput)) {
+    requestBody.max_output_tokens = numericValue(maxOutputTokensInput);
   }
 
-  if (topVInput.value.trim()) {
-    requestBody.top_v = Number(topVInput.value);
+  if (textVerbosityInput.value) {
+    requestBody.text = {
+      ...(requestBody.text || {}),
+      verbosity: textVerbosityInput.value
+    };
   }
 
-  return requestBody;
+  if (canUseSampling()) {
+    if (hasValue(temperatureInput)) requestBody.temperature = numericValue(temperatureInput);
+    if (hasValue(topPInput)) requestBody.top_p = numericValue(topPInput);
+  }
+
+  return {
+    ...requestBody,
+    ...extraJson
+  };
 }
 
 function buildPreview() {
@@ -178,7 +286,54 @@ function extractOutputText(payload) {
   return chunks.join("\n").trim() || "Текст не найден в ответе.";
 }
 
+function setInputEnabled(input, enabled) {
+  input.disabled = !enabled;
+  input.closest("label")?.classList.toggle("control-disabled", !enabled);
+}
+
+function setSelectOptionsEnabled(select, allowedValues) {
+  Array.from(select.options).forEach((option) => {
+    option.disabled = Boolean(option.value) && !allowedValues.includes(option.value);
+  });
+
+  if (select.value && !allowedValues.includes(select.value)) {
+    select.value = "";
+  }
+}
+
+function updateControlAvailability() {
+  const profile = getProfile();
+  const effectiveEffort = getEffectiveReasoningEffort();
+  const samplingAvailable = canUseSampling();
+
+  setSelectOptionsEnabled(reasoningEffortInput, profile.reasoningEfforts);
+  setInputEnabled(reasoningEffortInput, profile.reasoningEfforts.length > 0);
+  setInputEnabled(temperatureInput, samplingAvailable);
+  setInputEnabled(topPInput, samplingAvailable);
+  setInputEnabled(presencePenaltyInput, false);
+  setInputEnabled(frequencyPenaltyInput, false);
+  setInputEnabled(topKInput, false);
+  setInputEnabled(topVInput, false);
+
+  modelSupportHint.textContent = profile.reasoningEfforts.length
+    ? `Reasoning по умолчанию: ${profile.defaultReasoning}. Sampling-поля отправляются только при reasoning.effort = none.`
+    : "Для этой модели доступны базовые sampling-поля, если оставить их непустыми.";
+
+  reasoningHint.textContent = profile.reasoningEfforts.length
+    ? `Текущий эффективный режим: ${effectiveEffort || "не задан"}. Пусто означает дефолт модели.`
+    : "Эта модель не использует reasoning.effort в запросе.";
+
+  const samplingNote = samplingAvailable
+    ? "Будет отправлено, если поле заполнено."
+    : "Недоступно при текущем reasoning-режиме.";
+  parameterNotes.temperature.textContent = samplingNote;
+  parameterNotes.top_p.textContent = samplingNote;
+  parameterNotes.presence_penalty.textContent = "Не отправляется: не указано в Responses API.";
+  parameterNotes.frequency_penalty.textContent = "Не отправляется: не указано в Responses API.";
+}
+
 function updateRequestPreview() {
+  updateControlAvailability();
   try {
     requestPreview.textContent = pretty(buildPreview());
     setStatus("готов");
@@ -211,7 +366,6 @@ function resetForm() {
   responseMode = "json";
   toggleParsedButton.textContent = "Текст";
   renderExperts();
-  syncSliderLabels();
   updateRequestPreview();
   updateResponsePreview();
 }
@@ -260,12 +414,6 @@ function renderExperts() {
   });
 }
 
-function syncSliderLabels() {
-  sliders.forEach(([input, output]) => {
-    output.value = Number(input.value).toFixed(2);
-  });
-}
-
 async function sendRequest(event) {
   event.preventDefault();
 
@@ -311,24 +459,15 @@ async function sendRequest(event) {
   }
 }
 
-sliders.forEach(([input]) => {
-  input.addEventListener("input", () => {
-    syncSliderLabels();
-    updateRequestPreview();
-  });
-});
-
 [
   apiKeyInput,
   modelInput,
   customModelInput,
   instructionsInput,
+  useExpertsInput,
   promptInput,
-  maxOutputTokensInput,
-  topKInput,
-  topVInput,
-  reasoningEffortInput,
-  extraJsonInput
+  extraJsonInput,
+  ...parameterInputs
 ].forEach((input) => {
   input.addEventListener("input", updateRequestPreview);
   input.addEventListener("change", updateRequestPreview);
@@ -370,6 +509,5 @@ resetButton.addEventListener("click", resetForm);
 form.addEventListener("submit", sendRequest);
 
 renderExperts();
-syncSliderLabels();
 updateRequestPreview();
 updateResponsePreview();

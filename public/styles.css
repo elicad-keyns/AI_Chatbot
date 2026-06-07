@@ -127,10 +127,19 @@ h2 {
 }
 
 .control-group,
-.slider-row,
+.parameter-card,
 .number-grid label {
   display: grid;
   gap: 7px;
+}
+
+.field-note,
+.parameter-card small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.35;
 }
 
 .experts-panel {
@@ -166,8 +175,21 @@ h2 {
   color: var(--red);
 }
 
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #344054;
+}
+
+.switch-row input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--blue);
+}
+
 label,
-.slider-row span,
+.parameter-card span,
 .number-grid span {
   color: #344054;
   font-size: 0.88rem;
@@ -206,30 +228,19 @@ textarea:focus {
   box-shadow: 0 0 0 3px rgba(35, 100, 170, 0.16);
 }
 
-input[type="range"] {
-  min-height: auto;
-  padding: 0;
-  accent-color: var(--blue);
-}
-
-.slider-grid,
+.parameter-grid,
 .number-grid {
   display: grid;
   gap: 14px;
 }
 
-.slider-row {
-  grid-template-columns: 1fr auto;
+.parameter-card,
+.control-disabled {
+  transition: opacity 140ms ease;
 }
 
-.slider-row input {
-  grid-column: 1 / -1;
-}
-
-output {
-  color: var(--blue-dark);
-  font-size: 0.85rem;
-  font-weight: 800;
+.control-disabled {
+  opacity: 0.58;
 }
 
 .number-grid {
