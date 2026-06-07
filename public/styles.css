@@ -3,14 +3,49 @@
   --bg: #f4f6f8;
   --panel: #ffffff;
   --panel-strong: #f8fafc;
+  --field: #ffffff;
   --ink: #17202a;
+  --label: #344054;
   --muted: #667085;
   --line: #d8dee8;
   --blue: #2364aa;
   --blue-dark: #174a7c;
   --green: #207a5f;
   --red: #b42318;
+  --status-ready-bg: #effaf5;
+  --status-error-bg: #fff4f2;
+  --status-loading-bg: #eef6ff;
+  --code-bg: #101828;
+  --code-ink: #ecfdf3;
+  --code-muted: #d0d5dd;
+  --focus-ring: rgba(35, 100, 170, 0.16);
   --shadow: 0 16px 44px rgba(22, 32, 42, 0.08);
+  --metric-shadow: 0 10px 28px rgba(22, 32, 42, 0.06);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f141b;
+  --panel: #161d26;
+  --panel-strong: #1d2632;
+  --field: #111821;
+  --ink: #edf2f7;
+  --label: #d7dee8;
+  --muted: #9aa8ba;
+  --line: #2c3746;
+  --blue: #6da7f2;
+  --blue-dark: #93bdf5;
+  --green: #55c69a;
+  --red: #ff8a80;
+  --status-ready-bg: #12372c;
+  --status-error-bg: #3b1b1c;
+  --status-loading-bg: #132b46;
+  --code-bg: #090d12;
+  --code-ink: #d8fbe7;
+  --code-muted: #b8c3d2;
+  --focus-ring: rgba(109, 167, 242, 0.22);
+  --shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+  --metric-shadow: 0 10px 28px rgba(0, 0, 0, 0.22);
 }
 
 * {
@@ -69,6 +104,12 @@ button {
   gap: 14px;
 }
 
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .button-row,
 .pane-actions {
   gap: 10px;
@@ -105,7 +146,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--green);
-  background: #effaf5;
+  background: var(--status-ready-bg);
   font-size: 0.82rem;
   font-weight: 700;
   text-align: center;
@@ -113,12 +154,12 @@ h2 {
 
 .status-pill.error {
   color: var(--red);
-  background: #fff4f2;
+  background: var(--status-error-bg);
 }
 
 .status-pill.loading {
   color: var(--blue);
-  background: #eef6ff;
+  background: var(--status-loading-bg);
 }
 
 .settings-form {
@@ -179,7 +220,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #344054;
+  color: var(--label);
 }
 
 .switch-row input {
@@ -191,7 +232,7 @@ h2 {
 label,
 .parameter-card span,
 .number-grid span {
-  color: #344054;
+  color: var(--label);
   font-size: 0.88rem;
   font-weight: 700;
 }
@@ -202,7 +243,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--field);
   color: var(--ink);
   outline: none;
   transition: border-color 140ms ease, box-shadow 140ms ease;
@@ -225,7 +266,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(35, 100, 170, 0.16);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
 .parameter-grid,
@@ -271,7 +312,7 @@ textarea:focus {
 .ghost-button {
   padding: 0 14px;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border-color: var(--line);
   font-weight: 800;
 }
@@ -292,9 +333,32 @@ textarea:focus {
   width: 38px;
   min-height: 38px;
   color: var(--ink);
-  background: #fff;
+  background: var(--field);
   border-color: var(--line);
   font-size: 1.1rem;
+}
+
+.theme-toggle {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--ink);
+  background: var(--field);
+  font-size: 1rem;
+  font-weight: 900;
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.theme-toggle:hover {
+  background: var(--panel-strong);
+}
+
+.theme-toggle:active {
+  transform: translateY(1px);
 }
 
 .primary-button:active,
@@ -325,7 +389,7 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
-  box-shadow: 0 10px 28px rgba(22, 32, 42, 0.06);
+  box-shadow: var(--metric-shadow);
 }
 
 .metric-card span {
@@ -364,7 +428,7 @@ textarea:focus {
   min-height: 72px;
   padding: 15px 16px;
   border-bottom: 1px solid var(--line);
-  background: #fff;
+  background: var(--panel);
 }
 
 .code-block {
@@ -372,15 +436,15 @@ textarea:focus {
   min-height: 0;
   padding: 18px;
   overflow: auto;
-  background: #101828;
-  color: #ecfdf3;
+  background: var(--code-bg);
+  color: var(--code-ink);
   font: 0.86rem/1.55 "Cascadia Code", Consolas, "Courier New", monospace;
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .code-block.muted {
-  color: #d0d5dd;
+  color: var(--code-muted);
 }
 
 .hidden {

@@ -32,6 +32,8 @@ const resetButton = document.querySelector("#resetButton");
 const toggleParsedButton = document.querySelector("#toggleParsed");
 const copyRequestButton = document.querySelector("#copyRequest");
 const copyResponseButton = document.querySelector("#copyResponse");
+const themeToggle = document.querySelector("#themeToggle");
+const themeIcon = document.querySelector("#themeIcon");
 
 const parameterInputs = [
   temperatureInput,
@@ -169,6 +171,25 @@ const defaultExperts = [
 let experts = defaultExperts.map((expert) => ({ ...expert }));
 let lastResponse = null;
 let responseMode = "json";
+
+function getSavedTheme() {
+  const savedTheme = localStorage.getItem("theme");
+  if (savedTheme === "dark" || savedTheme === "light") return savedTheme;
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  themeIcon.textContent = theme === "dark" ? "☀" : "☾";
+  themeToggle.setAttribute("aria-label", theme === "dark" ? "Включить светлую тему" : "Включить темную тему");
+  themeToggle.title = theme === "dark" ? "Включить светлую тему" : "Включить темную тему";
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  localStorage.setItem("theme", nextTheme);
+  applyTheme(nextTheme);
+}
 
 function pretty(value) {
   return JSON.stringify(value, null, 2);
@@ -634,9 +655,11 @@ copyResponseButton.addEventListener("click", async () => {
   await copyText(responsePreview.textContent);
 });
 
+themeToggle.addEventListener("click", toggleTheme);
 resetButton.addEventListener("click", resetForm);
 form.addEventListener("submit", sendRequest);
 
+applyTheme(getSavedTheme());
 renderExperts();
 resetMetrics();
 updateRequestPreview();
