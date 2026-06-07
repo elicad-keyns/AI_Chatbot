@@ -26,13 +26,41 @@
           <section class="control-group">
             <label for="model">Модель</label>
             <select id="model" name="model">
-              <option value="gpt-5.5">gpt-5.5</option>
-              <option value="gpt-5.4">gpt-5.4</option>
-              <option value="gpt-5.2">gpt-5.2</option>
-              <option value="gpt-5.5-mini">gpt-5.5-mini</option>
-              <option value="gpt-5.5-nano">gpt-5.5-nano</option>
-              <option value="gpt-5.1">gpt-5.1</option>
-              <option value="gpt-4.1">gpt-4.1</option>
+              <optgroup label="Frontier">
+                <option value="gpt-5.4">gpt-5.4</option>
+                <option value="gpt-5.4-mini">gpt-5.4-mini</option>
+                <option value="gpt-5.4-nano">gpt-5.4-nano</option>
+              </optgroup>
+              <optgroup label="GPT-5 family">
+                <option value="gpt-5.5">gpt-5.5</option>
+                <option value="gpt-5.2">gpt-5.2</option>
+                <option value="gpt-5.2-pro">gpt-5.2-pro</option>
+                <option value="gpt-5.2-chat-latest">gpt-5.2-chat-latest</option>
+                <option value="gpt-5.2-codex">gpt-5.2-codex</option>
+                <option value="gpt-5.1">gpt-5.1</option>
+                <option value="gpt-5.1-chat-latest">gpt-5.1-chat-latest</option>
+                <option value="gpt-5.1-codex">gpt-5.1-codex</option>
+                <option value="gpt-5.1-codex-max">gpt-5.1-codex-max</option>
+                <option value="gpt-5">gpt-5</option>
+                <option value="gpt-5-mini">gpt-5-mini</option>
+                <option value="gpt-5-nano">gpt-5-nano</option>
+                <option value="gpt-5-pro">gpt-5-pro</option>
+                <option value="gpt-5-chat-latest">gpt-5-chat-latest</option>
+                <option value="gpt-5-codex">gpt-5-codex</option>
+              </optgroup>
+              <optgroup label="GPT-4 family">
+                <option value="gpt-4.1">gpt-4.1</option>
+                <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+                <option value="gpt-4o">gpt-4o</option>
+                <option value="gpt-4o-mini">gpt-4o-mini</option>
+              </optgroup>
+              <optgroup label="Reasoning">
+                <option value="o3">o3</option>
+                <option value="o3-mini">o3-mini</option>
+                <option value="o3-pro">o3-pro</option>
+                <option value="o4-mini">o4-mini</option>
+              </optgroup>
               <option value="custom">custom</option>
             </select>
             <input id="customModel" class="hidden" name="customModel" type="text" placeholder="model-id" spellcheck="false">

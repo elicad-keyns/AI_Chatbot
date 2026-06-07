@@ -47,62 +47,73 @@ const parameterNotes = {
   frequency_penalty: document.querySelector("#frequencyPenaltyNote")
 };
 
+const gpt5Profile = {
+  family: "gpt-5",
+  defaultReasoning: "medium",
+  reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
+  samplingRequiresReasoningNone: true,
+  supportsSampling: true,
+  supportsTextVerbosity: true
+};
+
+const gpt5LegacyProfile = {
+  ...gpt5Profile,
+  reasoningEfforts: ["none", "low", "medium", "high"]
+};
+
+const gptTextProfile = {
+  family: "gpt-text",
+  defaultReasoning: null,
+  reasoningEfforts: [],
+  samplingRequiresReasoningNone: false,
+  supportsSampling: true,
+  supportsTextVerbosity: false
+};
+
+const oSeriesProfile = {
+  family: "o-series",
+  defaultReasoning: "medium",
+  reasoningEfforts: ["low", "medium", "high"],
+  samplingRequiresReasoningNone: false,
+  supportsSampling: false,
+  supportsTextVerbosity: false
+};
+
 const modelProfiles = {
-  "gpt-5.5": {
-    family: "gpt-5.5",
-    defaultReasoning: "medium",
-    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
-    samplingRequiresReasoningNone: true,
-    supportsSampling: true
-  },
-  "gpt-5.4": {
-    family: "gpt-5.4",
-    defaultReasoning: "medium",
-    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
-    samplingRequiresReasoningNone: true,
-    supportsSampling: true
-  },
-  "gpt-5.2": {
-    family: "gpt-5.2",
-    defaultReasoning: "medium",
-    reasoningEfforts: ["none", "low", "medium", "high"],
-    samplingRequiresReasoningNone: true,
-    supportsSampling: true
-  },
-  "gpt-5.5-mini": {
-    family: "gpt-5.5",
-    defaultReasoning: "medium",
-    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
-    samplingRequiresReasoningNone: true,
-    supportsSampling: true
-  },
-  "gpt-5.5-nano": {
-    family: "gpt-5.5",
-    defaultReasoning: "medium",
-    reasoningEfforts: ["none", "minimal", "low", "medium", "high", "xhigh"],
-    samplingRequiresReasoningNone: true,
-    supportsSampling: true
-  },
-  "gpt-5.1": {
-    family: "gpt-5.1",
-    defaultReasoning: "none",
-    reasoningEfforts: ["none", "low", "medium", "high"],
-    samplingRequiresReasoningNone: true,
-    supportsSampling: true
-  },
-  "gpt-4.1": {
-    family: "gpt-4.1",
-    defaultReasoning: null,
-    reasoningEfforts: [],
-    samplingRequiresReasoningNone: false,
-    supportsSampling: true
-  },
+  "gpt-5.5": gpt5Profile,
+  "gpt-5.4": gpt5Profile,
+  "gpt-5.4-mini": gpt5Profile,
+  "gpt-5.4-nano": gpt5Profile,
+  "gpt-5.2": gpt5LegacyProfile,
+  "gpt-5.2-pro": gpt5LegacyProfile,
+  "gpt-5.2-chat-latest": gpt5LegacyProfile,
+  "gpt-5.2-codex": gpt5LegacyProfile,
+  "gpt-5.1": gpt5LegacyProfile,
+  "gpt-5.1-chat-latest": gpt5LegacyProfile,
+  "gpt-5.1-codex": gpt5LegacyProfile,
+  "gpt-5.1-codex-max": gpt5LegacyProfile,
+  "gpt-5": gpt5LegacyProfile,
+  "gpt-5-mini": gpt5LegacyProfile,
+  "gpt-5-nano": gpt5LegacyProfile,
+  "gpt-5-pro": gpt5LegacyProfile,
+  "gpt-5-chat-latest": gpt5LegacyProfile,
+  "gpt-5-codex": gpt5LegacyProfile,
+  "gpt-4.1": gptTextProfile,
+  "gpt-4.1-mini": gptTextProfile,
+  "gpt-4.1-nano": gptTextProfile,
+  "gpt-4o": gptTextProfile,
+  "gpt-4o-mini": gptTextProfile,
+  "o3": oSeriesProfile,
+  "o3-mini": oSeriesProfile,
+  "o3-pro": oSeriesProfile,
+  "o4-mini": oSeriesProfile,
   custom: {
     family: "custom",
     defaultReasoning: null,
     reasoningEfforts: [],
     samplingRequiresReasoningNone: false,
-    supportsSampling: true
+    supportsSampling: true,
+    supportsTextVerbosity: true
   }
 };
 
@@ -236,7 +247,7 @@ function buildRequestBody() {
     requestBody.max_output_tokens = numericValue(maxOutputTokensInput);
   }
 
-  if (textVerbosityInput.value) {
+  if (profile.supportsTextVerbosity && textVerbosityInput.value) {
     requestBody.text = {
       ...(requestBody.text || {}),
       verbosity: textVerbosityInput.value
@@ -310,14 +321,19 @@ function updateControlAvailability() {
   setInputEnabled(reasoningEffortInput, profile.reasoningEfforts.length > 0);
   setInputEnabled(temperatureInput, samplingAvailable);
   setInputEnabled(topPInput, samplingAvailable);
+  setInputEnabled(textVerbosityInput, profile.supportsTextVerbosity);
   setInputEnabled(presencePenaltyInput, false);
   setInputEnabled(frequencyPenaltyInput, false);
   setInputEnabled(topKInput, false);
   setInputEnabled(topVInput, false);
 
-  modelSupportHint.textContent = profile.reasoningEfforts.length
-    ? `Reasoning по умолчанию: ${profile.defaultReasoning}. Sampling-поля отправляются только при reasoning.effort = none.`
-    : "Для этой модели доступны базовые sampling-поля, если оставить их непустыми.";
+  if (!profile.supportsSampling) {
+    modelSupportHint.textContent = `Reasoning по умолчанию: ${profile.defaultReasoning}. Sampling-поля для этой модели не отправляются.`;
+  } else if (profile.samplingRequiresReasoningNone) {
+    modelSupportHint.textContent = `Reasoning по умолчанию: ${profile.defaultReasoning}. Sampling-поля отправляются только при reasoning.effort = none.`;
+  } else {
+    modelSupportHint.textContent = "Для этой модели доступны базовые sampling-поля, если оставить их непустыми.";
+  }
 
   reasoningHint.textContent = profile.reasoningEfforts.length
     ? `Текущий эффективный режим: ${effectiveEffort || "не задан"}. Пусто означает дефолт модели.`

@@ -41,6 +41,8 @@ POST https://api.openai.com/v1/responses
 - `max_output_tokens` и `text.verbosity` отправляются только если заполнены.
 - `presence_penalty`, `frequency_penalty`, `top_k`, `top_v` не отправляются автоматически, потому что они не указаны как параметры Responses API для этого запроса. Для экспериментов можно использовать `Extra JSON`.
 
+В списке моделей есть группы `Frontier`, `GPT-5 family`, `GPT-4 family` и `Reasoning`. Dropdown рассчитан на текстовые запросы через Responses API, поэтому audio, image и realtime модели в него не добавлены.
+
 ## Группа экспертов
 
 В левой панели есть блок `Experts`. Каждый эксперт состоит из роли и фокуса. Например:
