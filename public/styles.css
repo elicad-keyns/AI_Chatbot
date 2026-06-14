@@ -452,15 +452,18 @@ textarea:focus {
 }
 
 .chat-page {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .chat-shell {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 18px;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   padding: 22px;
+  overflow: hidden;
 }
 
 .chat-topbar,
@@ -523,7 +526,9 @@ textarea:focus {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   gap: 18px;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .chat-settings,
@@ -538,7 +543,9 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
   padding: 16px;
+  overflow: hidden;
 }
 
 .chat-history-panel {
@@ -620,8 +627,9 @@ textarea:focus {
 
 .chat-window {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: calc(100vh - 132px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -687,17 +695,17 @@ textarea:focus {
 .token-panel {
   display: grid;
   grid-template-columns: repeat(6, minmax(92px, 1fr));
-  gap: 8px;
-  padding: 10px 16px;
+  gap: 6px;
+  padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
 
 .token-card {
   display: grid;
-  gap: 3px;
-  min-height: 50px;
-  padding: 8px 10px;
+  gap: 2px;
+  min-height: 36px;
+  padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel-strong);
@@ -705,7 +713,7 @@ textarea:focus {
 
 .token-card span {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0;
   text-transform: uppercase;
@@ -713,17 +721,18 @@ textarea:focus {
 
 .token-card strong {
   color: var(--ink);
-  font-size: 0.96rem;
+  font-size: 0.86rem;
   line-height: 1.2;
 }
 
 .token-warning {
   grid-column: 1 / -1;
-  min-height: 18px;
+  min-height: 0;
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: 0.74rem;
   font-weight: 700;
+  line-height: 1.25;
 }
 
 .token-warning.warning {
@@ -862,10 +871,11 @@ textarea:focus {
 
   .chat-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .chat-window {
-    min-height: 68vh;
+    min-height: 0;
   }
 
   .chat-list {
@@ -911,6 +921,7 @@ textarea:focus {
   }
 
   .chat-shell {
+    gap: 10px;
     padding: 12px;
   }
 
@@ -940,7 +951,7 @@ textarea:focus {
 
   .token-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    padding: 10px;
+    padding: 8px 10px;
   }
 
   .chat-message {
