@@ -10,7 +10,7 @@
     <main class="chat-shell">
       <header class="chat-topbar">
         <div>
-          <p class="eyebrow">Day 9</p>
+          <p class="eyebrow">Day 10</p>
           <h1>AI Chat Agent</h1>
         </div>
         <nav class="chat-nav" aria-label="Navigation">
@@ -64,6 +64,22 @@
                 <input id="customModel" name="customModel" type="text" placeholder="model-id" spellcheck="false">
               </label>
 
+              <label class="toolbar-field strategy-field" for="contextStrategy">
+                <span>Стратегия</span>
+                <select id="contextStrategy" name="contextStrategy">
+                  <option value="sliding">Sliding Window</option>
+                  <option value="facts">Sticky Facts</option>
+                  <option value="branching">Branching</option>
+                </select>
+              </label>
+
+              <label class="toolbar-field compact-number-field" for="windowSize">
+                <span>Окно</span>
+                <input id="windowSize" name="windowSize" type="number" min="2" max="40" step="1" value="8">
+              </label>
+
+              <button class="ghost-button compact" id="showFacts" type="button">Facts</button>
+
               <label class="toolbar-switch" for="compressionToggle">
                 <input id="compressionToggle" name="compressionToggle" type="checkbox" checked>
                 <span>Компрессия</span>
@@ -75,6 +91,14 @@
               </label>
 
               <button class="ghost-button compact" id="showCompression" type="button">Summary</button>
+
+              <label class="toolbar-field branch-field" for="branchSelect">
+                <span>Ветка</span>
+                <select id="branchSelect" name="branchSelect"></select>
+              </label>
+
+              <button class="ghost-button compact" id="saveCheckpoint" type="button">Checkpoint</button>
+              <button class="ghost-button compact" id="createBranch" type="button">Branch</button>
 
               <label class="toolbar-field api-key-field" for="chatApiKey">
                 <span>API key</span>
@@ -96,11 +120,11 @@
               <strong id="metricHistoryTokens">0</strong>
             </div>
             <div class="token-card">
-              <span>Со сжатием</span>
+              <span>В запросе</span>
               <strong id="metricRequestTokens">0</strong>
             </div>
             <div class="token-card">
-              <span>Без сжатия</span>
+              <span>Полная</span>
               <strong id="metricFullRequestTokens">0</strong>
             </div>
             <div class="token-card">
@@ -108,7 +132,7 @@
               <strong id="metricSavedTokens">0</strong>
             </div>
             <div class="token-card">
-              <span>Summary</span>
+              <span>Контекст</span>
               <strong id="metricSummaryTokens">0</strong>
             </div>
             <div class="token-card">

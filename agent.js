@@ -44,6 +44,18 @@ class ChatAgent {
     return this.historyStore.updateChatSettings(userId, chatId, settings);
   }
 
+  saveCheckpoint(userId, chatId) {
+    return this.historyStore.saveCheckpoint(userId, chatId);
+  }
+
+  createBranch(userId, chatId, name) {
+    return this.historyStore.createBranch(userId, chatId, name);
+  }
+
+  switchBranch(userId, chatId, branchId) {
+    return this.historyStore.switchBranch(userId, chatId, branchId);
+  }
+
   resolveCompressionEnabled(chat, explicitValue) {
     if (typeof explicitValue === "boolean") return explicitValue;
     return chat?.settings?.compressionEnabled !== false;
@@ -54,23 +66,37 @@ class ChatAgent {
     return Number.isFinite(value) ? Math.max(2, Math.round(value)) : 10;
   }
 
-  getTokenSummary({ userId, chatId, message = "", model, compressionEnabled, summaryBatchSize }) {
+  resolveWindowSize(chat, explicitValue) {
+    const value = Number(explicitValue || chat?.settings?.windowSize || 8);
+    return Number.isFinite(value) ? Math.min(40, Math.max(2, Math.round(value))) : 8;
+  }
+
+  resolveContextStrategy(chat, explicitValue) {
+    const strategy = String(explicitValue || chat?.settings?.contextStrategy || "sliding");
+    return ["sliding", "facts", "branching"].includes(strategy) ? strategy : "sliding";
+  }
+
+  getTokenSummary({ userId, chatId, message = "", model, compressionEnabled, summaryBatchSize, contextStrategy, windowSize }) {
     const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
     const chat = chatId ? this.getChat(userId, chatId) : null;
     const historyMessages = chat?.messages || [];
-    const resolvedCompressionEnabled = this.resolveCompressionEnabled(chat, compressionEnabled);
-    const resolvedSummaryBatchSize = this.resolveSummaryBatchSize(chat, summaryBatchSize);
+    const strategy = this.resolveContextStrategy(chat, contextStrategy);
+    const resolvedWindowSize = this.resolveWindowSize(chat, windowSize);
+    const contextMessages = this.buildStrategyMessages({
+      strategy,
+      facts: chat?.memory?.facts,
+      messages: historyMessages,
+      windowSize: resolvedWindowSize
+    });
 
-    return this.contextManager.buildMetrics({
-      memory: chat?.memory,
+    return this.buildStrategyMetrics({
+      strategy,
+      windowSize: resolvedWindowSize,
+      contextMessages,
       storedHistoryMessages: historyMessages,
       currentMessage: message,
       instructions: this.instructions,
-      model: selectedModel,
-      compressionEnabled: resolvedCompressionEnabled,
-      settings: {
-        summaryBatchSize: resolvedSummaryBatchSize
-      }
+      model: selectedModel
     });
   }
 
@@ -91,7 +117,7 @@ class ChatAgent {
     const safeMessages = Array.isArray(messages)
       ? messages
         .map((item) => ({
-          role: item?.role === "summary" ? "summary" : item?.role === "assistant" ? "assistant" : "user",
+          role: item?.role === "facts" ? "facts" : item?.role === "summary" ? "summary" : item?.role === "assistant" ? "assistant" : "user",
           content: String(item?.content || "").trim()
         }))
         .filter((item) => item.content)
@@ -99,13 +125,13 @@ class ChatAgent {
 
     return safeMessages
       .map((item) => {
-        const label = item.role === "summary" ? "Context summary" : item.role === "assistant" ? "Assistant" : "User";
+        const label = item.role === "facts" ? "Sticky facts" : item.role === "summary" ? "Context summary" : item.role === "assistant" ? "Assistant" : "User";
         return `${label}: ${item.content}`;
       })
       .join("\n\n");
   }
 
-  async streamResponse({ apiKey, userId, chatId, message, model, compressionEnabled, summaryBatchSize, signal, onReady, onText, onComplete }) {
+  async streamResponse({ apiKey, userId, chatId, message, model, compressionEnabled, summaryBatchSize, contextStrategy, windowSize, signal, onReady, onText, onComplete }) {
     const userMessage = String(message || "").trim();
     if (!userMessage) {
       throw new Error("Message is required.");
@@ -115,14 +141,31 @@ class ChatAgent {
       title: this.historyStore.titleFromMessage(userMessage),
       settings: {
         compressionEnabled: compressionEnabled !== false,
-        summaryBatchSize: this.resolveSummaryBatchSize(null, summaryBatchSize)
+        summaryBatchSize: this.resolveSummaryBatchSize(null, summaryBatchSize),
+        contextStrategy: this.resolveContextStrategy(null, contextStrategy),
+        windowSize: this.resolveWindowSize(null, windowSize)
       }
     });
     const readyChat = this.getChat(userId, chat.id) || chat;
     onReady?.(readyChat);
 
-    const compressionActive = this.resolveCompressionEnabled(readyChat, compressionEnabled);
+    const strategy = this.resolveContextStrategy(readyChat, contextStrategy);
+    const resolvedWindowSize = this.resolveWindowSize(readyChat, windowSize);
+    const compressionActive = false;
     const resolvedSummaryBatchSize = this.resolveSummaryBatchSize(readyChat, summaryBatchSize);
+    let activeChat = readyChat;
+
+    if (strategy === "facts") {
+      activeChat = await this.updateFactsForChat({
+        apiKey,
+        userId,
+        chatId: chat.id,
+        model: String(model || this.defaultModel).trim() || this.defaultModel,
+        userMessage,
+        signal
+      }) || activeChat;
+    }
+
     const compressedChat = compressionActive
       ? await this.compressChatContext({
         apiKey,
@@ -135,7 +178,7 @@ class ChatAgent {
         signal
       })
       : null;
-    const activeChat = compressedChat || this.getChat(userId, chat.id) || readyChat;
+    activeChat = compressedChat || this.getChat(userId, chat.id) || activeChat;
     if (compressedChat) {
       onReady?.(activeChat);
     }
@@ -148,25 +191,26 @@ class ChatAgent {
       }
     ];
     const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
-    const promptMetrics = this.contextManager.buildMetrics({
-      memory: activeChat.memory,
+    const contextMessages = this.buildStrategyMessages({
+      strategy,
+      facts: activeChat.memory?.facts,
+      messages: requestMessages,
+      windowSize: resolvedWindowSize
+    });
+    const promptMetrics = this.buildStrategyMetrics({
+      strategy,
+      windowSize: resolvedWindowSize,
+      contextMessages,
       storedHistoryMessages: requestMessages.slice(0, -1),
       currentMessage: userMessage,
       instructions: this.instructions,
-      model: selectedModel,
-      compressionEnabled: compressionActive,
-      settings: {
-        summaryBatchSize: resolvedSummaryBatchSize
-      }
+      model: selectedModel
     });
 
     if (promptMetrics.overLimit) {
       throw new Error(`Token limit exceeded: request uses about ${promptMetrics.requestTokens} tokens, model limit is ${promptMetrics.contextLimit}.`);
     }
 
-    const contextMessages = this.contextManager.buildContextMessages(activeChat.memory, requestMessages, {
-      compressionEnabled: compressionActive
-    });
     const requestBody = this.buildRequestBody({ messages: contextMessages, model: selectedModel });
     const response = await this.fetch(this.apiUrl, {
       method: "POST",
@@ -212,7 +256,7 @@ class ChatAgent {
         responseText: assistantMessage,
         model: selectedModel
       });
-      const updatedChat = this.historyStore.addMessages(userId, chat.id, [
+      let updatedChat = this.historyStore.addMessages(userId, chat.id, [
         {
           role: "user",
           content: userMessage
@@ -223,12 +267,200 @@ class ChatAgent {
           tokenStats: finalMetrics
         }
       ], finalMetrics);
+
+      if (strategy === "sliding" && updatedChat) {
+        updatedChat = this.historyStore.replaceChatContext(userId, chat.id, {
+          memory: updatedChat.memory,
+          messages: updatedChat.messages.slice(-resolvedWindowSize)
+        }) || updatedChat;
+      }
+
       onComplete?.({
         response: openAiResult,
         chat: updatedChat,
         tokenStats: finalMetrics
       });
     }
+  }
+
+  buildStrategyMessages({ strategy, facts, messages, windowSize }) {
+    const safeMessages = Array.isArray(messages) ? messages : [];
+    const recentMessages = safeMessages.slice(-windowSize);
+
+    if (strategy !== "facts") {
+      return recentMessages;
+    }
+
+    const factsText = this.formatFacts(facts);
+    return factsText
+      ? [
+        {
+          role: "facts",
+          content: factsText
+        },
+        ...recentMessages
+      ]
+      : recentMessages;
+  }
+
+  buildStrategyMetrics({ strategy, windowSize, contextMessages, storedHistoryMessages, currentMessage, instructions, model }) {
+    const safeContextMessages = Array.isArray(contextMessages) ? contextMessages : [];
+    const safeStoredHistory = Array.isArray(storedHistoryMessages) ? storedHistoryMessages : [];
+    const currentMessageTokens = tokenMeter.estimateTextTokens(currentMessage);
+    const instructionTokens = tokenMeter.estimateTextTokens(instructions);
+    const historyTokens = tokenMeter.estimateMessagesTokens(safeContextMessages);
+    const fullHistoryTokens = tokenMeter.estimateMessagesTokens(safeStoredHistory);
+    const requestTokens = historyTokens + currentMessageTokens + instructionTokens + 8;
+    const fullRequestTokens = fullHistoryTokens + currentMessageTokens + instructionTokens + 8;
+    const savedTokens = Math.max(0, fullRequestTokens - requestTokens);
+    const contextLimit = tokenMeter.getModelContextLimit(model);
+    const remainingTokens = contextLimit - requestTokens;
+    const usageRatio = contextLimit ? requestTokens / contextLimit : 0;
+    const cost = tokenMeter.estimateCost(requestTokens, 0, model);
+
+    return {
+      model,
+      estimate: true,
+      currentMessageTokens,
+      historyTokens,
+      instructionTokens,
+      requestTokens,
+      responseTokens: 0,
+      totalTokens: requestTokens,
+      contextLimit,
+      remainingTokens,
+      usageRatio,
+      overLimit: requestTokens > contextLimit,
+      warningLevel: requestTokens > contextLimit ? "error" : usageRatio >= 0.8 ? "warning" : "ok",
+      estimatedCostUsd: cost.total,
+      strategy: {
+        name: strategy,
+        windowSize,
+        contextMessageCount: safeContextMessages.length,
+        storedMessageCount: safeStoredHistory.length,
+        fullHistoryTokens,
+        requestTokens,
+        fullRequestTokens,
+        savedTokens,
+        savingsRatio: fullRequestTokens ? savedTokens / fullRequestTokens : 0
+      },
+      compression: {
+        configured: false,
+        enabled: false,
+        recentMessageLimit: windowSize,
+        summaryBatchSize: 0,
+        summarizedMessageCount: 0,
+        recentMessageCount: safeContextMessages.length,
+        summaryTokens: 0,
+        compressedHistoryTokens: historyTokens,
+        fullHistoryTokens,
+        compressedRequestTokens: requestTokens,
+        fullRequestTokens,
+        savedTokens,
+        savingsRatio: fullRequestTokens ? savedTokens / fullRequestTokens : 0,
+        compressionRuns: 0
+      }
+    };
+  }
+
+  formatFacts(facts = {}) {
+    const entries = Object.entries(facts || {})
+      .map(([key, value]) => [String(key || "").trim(), String(value || "").trim()])
+      .filter(([key, value]) => key && value);
+
+    return entries.map(([key, value]) => `${key}: ${value}`).join("\n");
+  }
+
+  async updateFactsForChat({ apiKey, userId, chatId, model, userMessage, signal }) {
+    const chat = this.getChat(userId, chatId);
+    if (!chat) return null;
+
+    let facts;
+    try {
+      facts = await this.createFactsWithModel({
+        apiKey,
+        model,
+        previousFacts: chat.memory?.facts || {},
+        userMessage,
+        signal
+      });
+    } catch {
+      facts = this.createLocalFacts(chat.memory?.facts || {}, userMessage);
+    }
+
+    return this.historyStore.updateFacts(userId, chatId, facts);
+  }
+
+  async createFactsWithModel({ apiKey, model, previousFacts, userMessage, signal }) {
+    const response = await this.fetch(this.apiUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        instructions: [
+          "Extract durable sticky facts from the user's message for a chat agent.",
+          "Keep only stable key-value facts: goal, constraints, preferences, decisions, agreements, names, open_questions.",
+          "Return only a compact JSON object. Do not include a summary or markdown."
+        ].join(" "),
+        input: [
+          "Existing facts JSON:",
+          JSON.stringify(previousFacts || {}),
+          "",
+          "Latest user message:",
+          userMessage
+        ].join("\n"),
+        max_output_tokens: 500,
+        store: false
+      }),
+      signal
+    });
+
+    if (!response.ok) {
+      throw new Error(`Facts update failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const text = this.extractResponseText(payload);
+    const parsed = JSON.parse(text.replace(/^```json\s*/i, "").replace(/```$/i, "").trim());
+    return this.cleanFacts({
+      ...(previousFacts || {}),
+      ...parsed
+    });
+  }
+
+  extractResponseText(payload) {
+    if (typeof payload?.output_text === "string") return payload.output_text;
+    if (!Array.isArray(payload?.output)) return "";
+
+    return payload.output
+      .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+      .map((content) => content?.text || "")
+      .filter(Boolean)
+      .join("\n")
+      .trim();
+  }
+
+  createLocalFacts(previousFacts, userMessage) {
+    return this.cleanFacts({
+      ...(previousFacts || {}),
+      latest_user_fact: String(userMessage || "").replace(/\s+/g, " ").trim().slice(0, 300)
+    });
+  }
+
+  cleanFacts(facts) {
+    if (!facts || typeof facts !== "object" || Array.isArray(facts)) return {};
+
+    return Object.entries(facts).reduce((result, [key, value]) => {
+      const cleanKey = String(key || "").trim().slice(0, 60);
+      const cleanValue = String(value || "").trim().slice(0, 500);
+      if (cleanKey && cleanValue) {
+        result[cleanKey] = cleanValue;
+      }
+      return result;
+    }, {});
   }
 
   async compressChatContext({ apiKey, userId, chatId, model, settings, signal }) {

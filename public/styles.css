@@ -678,6 +678,14 @@ textarea:focus {
   width: 96px;
 }
 
+.strategy-field {
+  width: 180px;
+}
+
+.branch-field {
+  width: 150px;
+}
+
 .toolbar-switch {
   display: flex;
   align-items: center;
@@ -1069,6 +1077,8 @@ textarea:focus {
 
   .toolbar-field,
   .api-key-field,
+  .strategy-field,
+  .branch-field,
   .toolbar-switch {
     width: 100%;
   }

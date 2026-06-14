@@ -6,9 +6,17 @@ const chatStatus = document.querySelector("#chatStatus");
 const chatModel = document.querySelector("#chatModel");
 const customModel = document.querySelector("#customModel");
 const customModelWrap = document.querySelector("#customModelWrap");
+const contextStrategy = document.querySelector("#contextStrategy");
+const windowSize = document.querySelector("#windowSize");
+const showFactsButton = document.querySelector("#showFacts");
 const compressionToggle = document.querySelector("#compressionToggle");
 const compressionBatchSize = document.querySelector("#compressionBatchSize");
 const showCompressionButton = document.querySelector("#showCompression");
+const compressionToggleWrap = compressionToggle.closest(".toolbar-switch");
+const compressionBatchSizeWrap = compressionBatchSize.closest(".toolbar-field");
+const branchSelect = document.querySelector("#branchSelect");
+const saveCheckpointButton = document.querySelector("#saveCheckpoint");
+const createBranchButton = document.querySelector("#createBranch");
 const chatApiKey = document.querySelector("#chatApiKey");
 const clearChatButton = document.querySelector("#clearChat");
 const newChatButton = document.querySelector("#newChat");
@@ -36,6 +44,7 @@ const metricTokenCost = document.querySelector("#metricTokenCost");
 const tokenWarning = document.querySelector("#tokenWarning");
 const summaryOverlay = document.querySelector("#summaryOverlay");
 const closeSummaryButton = document.querySelector("#closeSummary");
+const summaryTitle = document.querySelector("#summaryTitle");
 const summaryStats = document.querySelector("#summaryStats");
 const summaryText = document.querySelector("#summaryText");
 
@@ -65,6 +74,16 @@ function getChatCompressionBatchSize(chat) {
   return Number.isFinite(value) ? Math.min(80, Math.max(2, Math.round(value))) : 10;
 }
 
+function getChatStrategy(chat) {
+  const strategy = String(chat?.settings?.contextStrategy || "sliding");
+  return ["sliding", "facts", "branching"].includes(strategy) ? strategy : "sliding";
+}
+
+function getChatWindowSize(chat) {
+  const value = Number(chat?.settings?.windowSize || 8);
+  return Number.isFinite(value) ? Math.min(40, Math.max(2, Math.round(value))) : 8;
+}
+
 function getActiveChat() {
   return chats.find((chat) => chat.id === activeChatId) || null;
 }
@@ -72,6 +91,43 @@ function getActiveChat() {
 function applyChatCompressionSetting(chat) {
   compressionToggle.checked = getChatCompressionEnabled(chat);
   compressionBatchSize.value = String(getChatCompressionBatchSize(chat));
+  contextStrategy.value = getChatStrategy(chat);
+  windowSize.value = String(getChatWindowSize(chat));
+  renderBranchSelect(chat);
+  updateStrategyControls();
+}
+
+function updateStrategyControls() {
+  const strategy = contextStrategy.value;
+  showFactsButton.classList.toggle("hidden", strategy !== "facts");
+  branchSelect.classList.toggle("hidden", strategy !== "branching");
+  saveCheckpointButton.classList.toggle("hidden", strategy !== "branching");
+  createBranchButton.classList.toggle("hidden", strategy !== "branching");
+  compressionToggleWrap.classList.add("hidden");
+  compressionBatchSizeWrap.classList.add("hidden");
+  showCompressionButton.classList.add("hidden");
+}
+
+function renderBranchSelect(chat) {
+  branchSelect.innerHTML = "";
+  const branches = Array.isArray(chat?.branches) ? chat.branches : [];
+
+  if (!branches.length) {
+    const option = document.createElement("option");
+    option.value = "main";
+    option.textContent = "Main";
+    branchSelect.append(option);
+    return;
+  }
+
+  branches.forEach((branch) => {
+    const option = document.createElement("option");
+    option.value = branch.id;
+    option.textContent = `${branch.name || "Branch"} (${branch.messageCount || 0})`;
+    branchSelect.append(option);
+  });
+
+  branchSelect.value = chat?.activeBranchId || branches[0]?.id || "main";
 }
 
 function toggleTheme() {
@@ -134,12 +190,13 @@ function updateAssistantTokenBadge(textElement, stats) {
 function updateTokenMetrics(stats) {
   const tokenStats = stats || {};
   const compression = tokenStats.compression || {};
+  const strategy = tokenStats.strategy || {};
   metricCurrentTokens.textContent = formatNumber(tokenStats.currentMessageTokens);
   metricHistoryTokens.textContent = formatNumber(tokenStats.historyTokens);
   metricRequestTokens.textContent = formatNumber(tokenStats.requestTokens);
-  metricFullRequestTokens.textContent = formatNumber(compression.fullRequestTokens || tokenStats.requestTokens);
-  metricSavedTokens.textContent = formatNumber(compression.savedTokens);
-  metricSummaryTokens.textContent = formatNumber(compression.summaryTokens);
+  metricFullRequestTokens.textContent = formatNumber(strategy.fullRequestTokens || compression.fullRequestTokens || tokenStats.requestTokens);
+  metricSavedTokens.textContent = formatNumber(strategy.savedTokens || compression.savedTokens);
+  metricSummaryTokens.textContent = formatNumber(strategy.contextMessageCount || compression.summaryTokens);
   metricResponseTokens.textContent = formatNumber(tokenStats.responseTokens);
   metricTokenLimit.textContent = formatNumber(tokenStats.contextLimit);
   metricTokenCost.textContent = formatUsd(tokenStats.estimatedCostUsd);
@@ -150,7 +207,7 @@ function updateTokenMetrics(stats) {
   const compressionNote = compression.enabled
     ? ` Сжато сообщений: ${formatNumber(compression.summarizedMessageCount)}. Последних без изменений: ${formatNumber(compression.recentMessageCount)}. Экономия: ${formatNumber(compression.savedTokens)} токенов (${formatPercent(compression.savingsRatio)}).`
     : compression.configured === false
-      ? " Компрессия выключена: summary не подставляется и новые сообщения не сжимаются."
+      ? ` Стратегия: ${strategy.name || contextStrategy.value}, окно ${formatNumber(strategy.windowSize || windowSize.value)}. Экономия относительно полной истории: ${formatNumber(strategy.savedTokens)} токенов (${formatPercent(strategy.savingsRatio)}).`
       : ` Сжатие включится после накопления ${formatNumber(compression.summaryBatchSize || 10)} старых сообщений сверх последних ${formatNumber(compression.recentMessageLimit || 8)}.`;
 
   if (!tokenStats.contextLimit) {
@@ -185,7 +242,9 @@ async function loadTokenPreview() {
       message: chatInput.value,
       model: getSelectedModel(),
       compressionEnabled: compressionToggle.checked,
-      summaryBatchSize: compressionBatchSize.value
+      summaryBatchSize: compressionBatchSize.value,
+      contextStrategy: contextStrategy.value,
+      windowSize: windowSize.value
     })
   });
 
@@ -547,7 +606,9 @@ async function createNewChat() {
     body: JSON.stringify({
       title: "Новый чат",
       compressionEnabled: compressionToggle.checked,
-      summaryBatchSize: compressionBatchSize.value
+      summaryBatchSize: compressionBatchSize.value,
+      contextStrategy: contextStrategy.value,
+      windowSize: windowSize.value
     })
   });
 
@@ -603,6 +664,7 @@ function showCompressionSummary() {
   const chat = getActiveChat();
   const memory = chat?.memory || {};
   const settings = chat?.settings || {};
+  summaryTitle.textContent = "Текущая компрессия";
   const stats = [
     ["Компрессия", settings.compressionEnabled === false ? "выключена" : "включена"],
     ["Порог", `${getChatCompressionBatchSize(chat)} сообщений`],
@@ -629,6 +691,35 @@ function showCompressionSummary() {
   });
 
   summaryText.textContent = String(memory.summary || "").trim() || "Summary пока пустое. Оно появится после первой сработавшей компрессии в этом чате.";
+  summaryOverlay.classList.remove("hidden");
+}
+
+function showFactsMemory() {
+  const chat = getActiveChat();
+  const facts = chat?.memory?.facts || {};
+  const entries = Object.entries(facts);
+
+  summaryTitle.textContent = "Sticky Facts";
+  summaryStats.innerHTML = "";
+  [
+    ["Стратегия", getChatStrategy(chat)],
+    ["Facts", formatNumber(entries.length)],
+    ["Окно", `${getChatWindowSize(chat)} сообщений`],
+    ["Ветка", chat?.activeBranchName || "-"]
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "summary-stat";
+    const name = document.createElement("span");
+    name.textContent = label;
+    const content = document.createElement("strong");
+    content.textContent = value;
+    item.append(name, content);
+    summaryStats.append(item);
+  });
+
+  summaryText.textContent = entries.length
+    ? entries.map(([key, value]) => `${key}: ${value}`).join("\n")
+    : "Facts пока пустые. Они обновляются после сообщений пользователя в стратегии Sticky Facts.";
   summaryOverlay.classList.remove("hidden");
 }
 
@@ -717,6 +808,8 @@ async function sendChatMessage(event) {
         model,
         compressionEnabled: compressionToggle.checked,
         summaryBatchSize: compressionBatchSize.value,
+        contextStrategy: contextStrategy.value,
+        windowSize: windowSize.value,
         message: content
       })
     });
@@ -766,6 +859,31 @@ chatModel.addEventListener("change", () => {
 });
 
 customModel.addEventListener("input", scheduleTokenPreview);
+contextStrategy.addEventListener("change", () => {
+  updateStrategyControls();
+  saveActiveChatSettings({
+    contextStrategy: contextStrategy.value,
+    windowSize: windowSize.value,
+    compressionEnabled: compressionToggle.checked,
+    summaryBatchSize: compressionBatchSize.value
+  }).catch(() => {
+    setStatus("ошибка", "error");
+  });
+});
+windowSize.addEventListener("change", () => {
+  windowSize.value = String(getChatWindowSize({
+    settings: {
+      windowSize: windowSize.value
+    }
+  }));
+  saveActiveChatSettings({
+    contextStrategy: contextStrategy.value,
+    windowSize: windowSize.value
+  }).catch(() => {
+    setStatus("ошибка", "error");
+  });
+});
+windowSize.addEventListener("input", scheduleTokenPreview);
 compressionToggle.addEventListener("change", () => {
   saveActiveChatSettings({
     compressionEnabled: compressionToggle.checked,
@@ -788,12 +906,96 @@ compressionBatchSize.addEventListener("change", () => {
   });
 });
 compressionBatchSize.addEventListener("input", scheduleTokenPreview);
+showFactsButton.addEventListener("click", showFactsMemory);
 showCompressionButton.addEventListener("click", showCompressionSummary);
 closeSummaryButton.addEventListener("click", hideCompressionSummary);
 summaryOverlay.addEventListener("click", (event) => {
   if (event.target === summaryOverlay) {
     hideCompressionSummary();
   }
+});
+
+branchSelect.addEventListener("change", () => {
+  if (!currentUser || !activeChatId || !branchSelect.value) return;
+
+  fetch(`/api/chats/${encodeURIComponent(activeChatId)}/branches/${encodeURIComponent(branchSelect.value)}`, {
+    method: "POST"
+  })
+    .then((response) => {
+      if (response.status === 401) {
+        showAuth();
+        return null;
+      }
+      if (!response.ok) throw new Error(`Switch branch failed: ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      if (!payload?.chat) return;
+      upsertChat(payload.chat);
+      setActiveChat(payload.chat);
+      renderMessages(payload.chat.messages);
+      updateTokenMetrics(payload.chat.tokenStats);
+      scheduleTokenPreview();
+    })
+    .catch(() => {
+      setStatus("ошибка", "error");
+    });
+});
+
+saveCheckpointButton.addEventListener("click", () => {
+  if (!currentUser || !activeChatId) return;
+
+  fetch(`/api/chats/${encodeURIComponent(activeChatId)}/checkpoint`, { method: "POST" })
+    .then((response) => {
+      if (response.status === 401) {
+        showAuth();
+        return null;
+      }
+      if (!response.ok) throw new Error(`Checkpoint failed: ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      if (!payload?.chat) return;
+      upsertChat(payload.chat);
+      setActiveChat(payload.chat);
+      setStatus("checkpoint");
+    })
+    .catch(() => {
+      setStatus("ошибка", "error");
+    });
+});
+
+createBranchButton.addEventListener("click", () => {
+  if (!currentUser || !activeChatId) return;
+  const name = window.prompt("Название ветки", `Branch ${(getActiveChat()?.branches?.length || 0) + 1}`);
+  if (name === null) return;
+
+  fetch(`/api/chats/${encodeURIComponent(activeChatId)}/branches`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ name })
+  })
+    .then((response) => {
+      if (response.status === 401) {
+        showAuth();
+        return null;
+      }
+      if (!response.ok) throw new Error(`Create branch failed: ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      if (!payload?.chat) return;
+      upsertChat(payload.chat);
+      setActiveChat(payload.chat);
+      renderMessages(payload.chat.messages);
+      updateTokenMetrics(payload.chat.tokenStats);
+      scheduleTokenPreview();
+    })
+    .catch(() => {
+      setStatus("ошибка", "error");
+    });
 });
 
 newChatButton.addEventListener("click", () => {

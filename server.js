@@ -201,6 +201,8 @@ async function handleChatStream(req, res) {
       ? payload.compressionEnabled
       : undefined;
     const summaryBatchSize = Number(payload.summaryBatchSize || 0) || undefined;
+    const contextStrategy = String(payload.contextStrategy || "").trim() || undefined;
+    const windowSize = Number(payload.windowSize || 0) || undefined;
 
     if (!apiKey) {
       sendJson(res, 400, {
@@ -238,6 +240,8 @@ async function handleChatStream(req, res) {
       model,
       compressionEnabled,
       summaryBatchSize,
+      contextStrategy,
+      windowSize,
       signal: abortController.signal,
       onReady: (chat) => {
         if (!res.writableEnded) {
@@ -248,7 +252,11 @@ async function handleChatStream(req, res) {
               updatedAt: chat.updatedAt,
               messageCount: chat.messageCount,
               settings: chat.settings || null,
-              memory: chat.memory || null
+              memory: chat.memory || null,
+              activeBranchId: chat.activeBranchId || null,
+              activeBranchName: chat.activeBranchName || null,
+              branches: chat.branches || [],
+              checkpoint: chat.checkpoint || null
             }
           });
         }
@@ -273,6 +281,10 @@ async function handleChatStream(req, res) {
                 messageCount: chat.messageCount,
                 settings: chat.settings || null,
                 memory: chat.memory || null,
+                activeBranchId: chat.activeBranchId || null,
+                activeBranchName: chat.activeBranchName || null,
+                branches: chat.branches || [],
+                checkpoint: chat.checkpoint || null,
                 tokenStats: chat.tokenStats || null
               }
               : null
@@ -324,7 +336,9 @@ async function handleChatTokenPreview(req, res) {
     compressionEnabled: typeof payload.compressionEnabled === "boolean"
       ? payload.compressionEnabled
       : undefined,
-    summaryBatchSize: Number(payload.summaryBatchSize || 0) || undefined
+    summaryBatchSize: Number(payload.summaryBatchSize || 0) || undefined,
+    contextStrategy: String(payload.contextStrategy || "").trim() || undefined,
+    windowSize: Number(payload.windowSize || 0) || undefined
   });
 
   sendJson(res, 200, { tokenStats });
@@ -355,7 +369,9 @@ async function handleChats(req, res) {
       title: payload.title,
       settings: {
         compressionEnabled: payload.compressionEnabled !== false,
-        summaryBatchSize: payload.summaryBatchSize
+        summaryBatchSize: payload.summaryBatchSize,
+        contextStrategy: payload.contextStrategy,
+        windowSize: payload.windowSize
       }
     });
 
@@ -384,11 +400,52 @@ async function handleChats(req, res) {
     if (payload.summaryBatchSize !== undefined) {
       nextSettings.summaryBatchSize = payload.summaryBatchSize;
     }
+    if (payload.contextStrategy !== undefined) {
+      nextSettings.contextStrategy = payload.contextStrategy;
+    }
+    if (payload.windowSize !== undefined) {
+      nextSettings.windowSize = payload.windowSize;
+    }
 
     const chat = chatAgent.updateChatSettings(user.id, chatId, nextSettings);
 
     if (!chat) {
       sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "checkpoint" && req.method === "POST") {
+    const chat = chatAgent.saveCheckpoint(user.id, chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "branches" && req.method === "POST") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const chat = chatAgent.createBranch(user.id, chatId, payload.name);
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 201, { chat });
+    return;
+  }
+
+  if (parts.length === 5 && parts[3] === "branches" && req.method === "POST") {
+    const chat = chatAgent.switchBranch(user.id, chatId, parts[4]);
+    if (!chat) {
+      sendJson(res, 404, { error: "Branch not found." });
       return;
     }
 
