@@ -24,6 +24,9 @@ const userBadge = document.querySelector("#userBadge");
 const metricCurrentTokens = document.querySelector("#metricCurrentTokens");
 const metricHistoryTokens = document.querySelector("#metricHistoryTokens");
 const metricRequestTokens = document.querySelector("#metricRequestTokens");
+const metricFullRequestTokens = document.querySelector("#metricFullRequestTokens");
+const metricSavedTokens = document.querySelector("#metricSavedTokens");
+const metricSummaryTokens = document.querySelector("#metricSummaryTokens");
 const metricResponseTokens = document.querySelector("#metricResponseTokens");
 const metricTokenLimit = document.querySelector("#metricTokenLimit");
 const metricTokenCost = document.querySelector("#metricTokenCost");
@@ -73,6 +76,12 @@ function formatUsd(value) {
   return `$${amount.toFixed(6)}`;
 }
 
+function formatPercent(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return "0%";
+  return `${Math.round(amount * 100)}%`;
+}
+
 function formatMessageTokenSummary(stats) {
   if (!stats) return "";
 
@@ -80,9 +89,11 @@ function formatMessageTokenSummary(stats) {
   const responseTokens = Number(stats.responseTokens || 0);
   const totalTokens = Number(stats.totalTokens || requestTokens + responseTokens);
   const estimatedCostUsd = Number(stats.estimatedCostUsd || 0);
+  const savedTokens = Number(stats.compression?.savedTokens || 0);
 
   if (!requestTokens && !responseTokens && !totalTokens) return "";
-  return `Запрос ${formatNumber(requestTokens)} | Ответ ${formatNumber(responseTokens)} | Всего ${formatNumber(totalTokens)} | ${formatUsd(estimatedCostUsd)}`;
+  const compressionText = savedTokens > 0 ? ` | Сжато -${formatNumber(savedTokens)}` : "";
+  return `Запрос ${formatNumber(requestTokens)} | Ответ ${formatNumber(responseTokens)} | Всего ${formatNumber(totalTokens)} | ${formatUsd(estimatedCostUsd)}${compressionText}`;
 }
 
 function updateAssistantTokenBadge(textElement, stats) {
@@ -97,9 +108,13 @@ function updateAssistantTokenBadge(textElement, stats) {
 
 function updateTokenMetrics(stats) {
   const tokenStats = stats || {};
+  const compression = tokenStats.compression || {};
   metricCurrentTokens.textContent = formatNumber(tokenStats.currentMessageTokens);
   metricHistoryTokens.textContent = formatNumber(tokenStats.historyTokens);
   metricRequestTokens.textContent = formatNumber(tokenStats.requestTokens);
+  metricFullRequestTokens.textContent = formatNumber(compression.fullRequestTokens || tokenStats.requestTokens);
+  metricSavedTokens.textContent = formatNumber(compression.savedTokens);
+  metricSummaryTokens.textContent = formatNumber(compression.summaryTokens);
   metricResponseTokens.textContent = formatNumber(tokenStats.responseTokens);
   metricTokenLimit.textContent = formatNumber(tokenStats.contextLimit);
   metricTokenCost.textContent = formatUsd(tokenStats.estimatedCostUsd);
@@ -107,14 +122,18 @@ function updateTokenMetrics(stats) {
   tokenWarning.classList.toggle("error", tokenStats.warningLevel === "error");
   tokenWarning.classList.toggle("warning", tokenStats.warningLevel === "warning");
 
+  const compressionNote = compression.enabled
+    ? ` Сжато сообщений: ${formatNumber(compression.summarizedMessageCount)}. Последних без изменений: ${formatNumber(compression.recentMessageCount)}. Экономия: ${formatNumber(compression.savedTokens)} токенов (${formatPercent(compression.savingsRatio)}).`
+    : ` Сжатие включится после накопления ${formatNumber(compression.summaryBatchSize || 10)} старых сообщений сверх последних ${formatNumber(compression.recentMessageLimit || 8)}.`;
+
   if (!tokenStats.contextLimit) {
     tokenWarning.textContent = "";
   } else if (tokenStats.overLimit) {
-    tokenWarning.textContent = `Контекст переполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов. Запрос не будет отправлен.`;
+    tokenWarning.textContent = `Контекст переполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов. Запрос не будет отправлен.${compressionNote}`;
   } else if (tokenStats.warningLevel === "warning") {
-    tokenWarning.textContent = `Контекст почти заполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов.`;
+    tokenWarning.textContent = `Контекст почти заполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов.${compressionNote}`;
   } else {
-    tokenWarning.textContent = `Осталось примерно ${formatNumber(tokenStats.remainingTokens)} токенов контекста.`;
+    tokenWarning.textContent = `Осталось примерно ${formatNumber(tokenStats.remainingTokens)} токенов контекста.${compressionNote}`;
   }
 }
 

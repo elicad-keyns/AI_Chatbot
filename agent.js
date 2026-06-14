@@ -1,5 +1,6 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const ChatHistoryStore = require("./chatHistoryStore");
+const ContextManager = require("./contextManager");
 const tokenMeter = require("./tokenMeter");
 
 class ChatAgent {
@@ -8,6 +9,7 @@ class ChatAgent {
     this.fetch = options.fetchImpl || fetch;
     this.defaultModel = options.defaultModel || "gpt-4.1-mini";
     this.historyStore = options.historyStore || new ChatHistoryStore(options.historyFilePath);
+    this.contextManager = options.contextManager || new ContextManager(options.contextOptions);
     this.instructions = options.instructions || [
       "You are a helpful AI chat agent.",
       "Answer clearly, naturally, and in the same language the user uses when possible."
@@ -40,10 +42,12 @@ class ChatAgent {
 
   getTokenSummary({ userId, chatId, message = "", model }) {
     const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
-    const historyMessages = chatId ? this.getHistory(userId, chatId) : [];
+    const chat = chatId ? this.getChat(userId, chatId) : null;
+    const historyMessages = chat?.messages || [];
 
-    return tokenMeter.buildPromptMetrics({
-      historyMessages,
+    return this.contextManager.buildMetrics({
+      memory: chat?.memory,
+      storedHistoryMessages: historyMessages,
       currentMessage: message,
       instructions: this.instructions,
       model: selectedModel
@@ -67,15 +71,17 @@ class ChatAgent {
     const safeMessages = Array.isArray(messages)
       ? messages
         .map((item) => ({
-          role: item?.role === "assistant" ? "assistant" : "user",
+          role: item?.role === "summary" ? "summary" : item?.role === "assistant" ? "assistant" : "user",
           content: String(item?.content || "").trim()
         }))
         .filter((item) => item.content)
-        .slice(-20)
       : [];
 
     return safeMessages
-      .map((item) => `${item.role === "assistant" ? "Assistant" : "User"}: ${item.content}`)
+      .map((item) => {
+        const label = item.role === "summary" ? "Context summary" : item.role === "assistant" ? "Assistant" : "User";
+        return `${label}: ${item.content}`;
+      })
       .join("\n\n");
   }
 
@@ -91,16 +97,29 @@ class ChatAgent {
     const readyChat = this.getChat(userId, chat.id) || chat;
     onReady?.(readyChat);
 
+    const compressedChat = await this.compressChatContext({
+      apiKey,
+      userId,
+      chatId: chat.id,
+      model: String(model || this.defaultModel).trim() || this.defaultModel,
+      signal
+    });
+    const activeChat = compressedChat || this.getChat(userId, chat.id) || readyChat;
+    if (compressedChat) {
+      onReady?.(activeChat);
+    }
+
     const requestMessages = [
-      ...this.getHistory(userId, chat.id),
+      ...(activeChat.messages || []),
       {
         role: "user",
         content: userMessage
       }
     ];
     const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
-    const promptMetrics = tokenMeter.buildPromptMetrics({
-      historyMessages: requestMessages.slice(0, -1),
+    const promptMetrics = this.contextManager.buildMetrics({
+      memory: activeChat.memory,
+      storedHistoryMessages: requestMessages.slice(0, -1),
       currentMessage: userMessage,
       instructions: this.instructions,
       model: selectedModel
@@ -110,7 +129,8 @@ class ChatAgent {
       throw new Error(`Token limit exceeded: request uses about ${promptMetrics.requestTokens} tokens, model limit is ${promptMetrics.contextLimit}.`);
     }
 
-    const requestBody = this.buildRequestBody({ messages: requestMessages, model: selectedModel });
+    const contextMessages = this.contextManager.buildContextMessages(activeChat.memory, requestMessages);
+    const requestBody = this.buildRequestBody({ messages: contextMessages, model: selectedModel });
     const response = await this.fetch(this.apiUrl, {
       method: "POST",
       headers: {
@@ -172,6 +192,28 @@ class ChatAgent {
         tokenStats: finalMetrics
       });
     }
+  }
+
+  async compressChatContext({ apiKey, userId, chatId, model, signal }) {
+    const chat = this.getChat(userId, chatId);
+    if (!chat) return null;
+
+    const result = await this.contextManager.compressIfNeeded({
+      apiKey,
+      apiUrl: this.apiUrl,
+      fetchImpl: this.fetch,
+      model,
+      memory: chat.memory,
+      messages: chat.messages,
+      signal
+    });
+
+    if (!result.compressed) return null;
+
+    return this.historyStore.replaceChatContext(userId, chatId, {
+      memory: result.memory,
+      messages: result.messages
+    });
   }
 
   async formatOpenAiError(response) {

@@ -6,6 +6,16 @@ const DEFAULT_HISTORY_FILE = path.join(__dirname, "data", "chat-history.json");
 const VALID_ROLES = new Set(["user", "assistant"]);
 const MAX_MESSAGES_PER_CHAT = 80;
 const LEGACY_USER_ID = "legacy";
+const EMPTY_MEMORY = {
+  summary: "",
+  summarizedMessageCount: 0,
+  originalTokenEstimate: 0,
+  summaryTokenEstimate: 0,
+  compressionRuns: 0,
+  recentMessageLimit: 0,
+  summaryBatchSize: 0,
+  updatedAt: null
+};
 
 class ChatHistoryStore {
   constructor(filePath = process.env.CHAT_HISTORY_FILE || DEFAULT_HISTORY_FILE) {
@@ -47,6 +57,7 @@ class ChatHistoryStore {
       createdAt: options.createdAt || now,
       updatedAt: options.updatedAt || now,
       tokenStats: options.tokenStats || null,
+      memory: this.sanitizeMemory(options.memory),
       messages: []
     };
 
@@ -97,11 +108,24 @@ class ChatHistoryStore {
     return this.cloneChat(chat);
   }
 
+  replaceChatContext(userId, chatId, { messages, memory }) {
+    const chat = this.findChat(userId, chatId);
+    if (!chat) return null;
+
+    chat.messages = this.sanitizeMessages(messages);
+    chat.memory = this.sanitizeMemory(memory);
+    chat.updatedAt = new Date().toISOString();
+    this.sortChats();
+    this.save();
+    return this.cloneChat(chat);
+  }
+
   clearChat(userId, chatId) {
     const chat = this.findChat(userId, chatId);
     if (!chat) return null;
 
     chat.messages = [];
+    chat.memory = this.sanitizeMemory();
     chat.tokenStats = null;
     chat.updatedAt = new Date().toISOString();
     this.sortChats();
@@ -158,6 +182,7 @@ class ChatHistoryStore {
           createdAt: this.cleanDate(chat?.createdAt) || now,
           updatedAt: this.cleanDate(chat?.updatedAt) || now,
           tokenStats: this.sanitizeTokenStats(chat?.tokenStats),
+          memory: this.sanitizeMemory(chat?.memory),
           messages: this.sanitizeMessages(chat?.messages)
         };
       })
@@ -192,6 +217,7 @@ class ChatHistoryStore {
         createdAt: now,
         updatedAt: now,
         tokenStats: null,
+        memory: this.sanitizeMemory(),
         messages: safeMessages
       }
     ];
@@ -204,8 +230,9 @@ class ChatHistoryStore {
       title: chat.title,
       createdAt: chat.createdAt,
       updatedAt: chat.updatedAt,
-      messageCount: chat.messages.length,
+      messageCount: this.getVisibleMessageCount(chat),
       preview: lastMessage?.content || "",
+      memory: this.toMemorySummary(chat.memory),
       tokenStats: this.sanitizeTokenStats(chat.tokenStats)
     };
   }
@@ -227,8 +254,39 @@ class ChatHistoryStore {
   }
 
   cleanDate(value) {
+    if (!value) return "";
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  }
+
+  getVisibleMessageCount(chat) {
+    const memory = this.sanitizeMemory(chat?.memory);
+    const messageCount = Array.isArray(chat?.messages) ? chat.messages.length : 0;
+    return memory.summarizedMessageCount + messageCount;
+  }
+
+  sanitizeMemory(memory = {}) {
+    if (!memory || typeof memory !== "object") return { ...EMPTY_MEMORY };
+
+    return {
+      summary: String(memory.summary || "").trim(),
+      summarizedMessageCount: Math.max(0, Number(memory.summarizedMessageCount || 0)),
+      originalTokenEstimate: Math.max(0, Number(memory.originalTokenEstimate || 0)),
+      summaryTokenEstimate: Math.max(0, Number(memory.summaryTokenEstimate || 0)),
+      compressionRuns: Math.max(0, Number(memory.compressionRuns || 0)),
+      recentMessageLimit: Math.max(0, Number(memory.recentMessageLimit || 0)),
+      summaryBatchSize: Math.max(0, Number(memory.summaryBatchSize || 0)),
+      updatedAt: this.cleanDate(memory.updatedAt) || null
+    };
+  }
+
+  toMemorySummary(memory = {}) {
+    const safeMemory = this.sanitizeMemory(memory);
+    return {
+      ...safeMemory,
+      hasSummary: Boolean(safeMemory.summary),
+      summaryPreview: safeMemory.summary.slice(0, 240)
+    };
   }
 
   sanitizeTokenStats(stats) {
@@ -250,7 +308,44 @@ class ChatHistoryStore {
       warningLevel: String(stats.warningLevel || "ok"),
       estimatedCostUsd: Number(stats.estimatedCostUsd || 0),
       inputCostUsd: Number(stats.inputCostUsd || 0),
-      outputCostUsd: Number(stats.outputCostUsd || 0)
+      outputCostUsd: Number(stats.outputCostUsd || 0),
+      compression: this.sanitizeCompressionStats(stats.compression)
+    };
+  }
+
+  sanitizeCompressionStats(stats) {
+    if (!stats || typeof stats !== "object") {
+      return {
+        enabled: false,
+        recentMessageLimit: 0,
+        summaryBatchSize: 0,
+        summarizedMessageCount: 0,
+        recentMessageCount: 0,
+        summaryTokens: 0,
+        compressedHistoryTokens: 0,
+        fullHistoryTokens: 0,
+        compressedRequestTokens: 0,
+        fullRequestTokens: 0,
+        savedTokens: 0,
+        savingsRatio: 0,
+        compressionRuns: 0
+      };
+    }
+
+    return {
+      enabled: Boolean(stats.enabled),
+      recentMessageLimit: Number(stats.recentMessageLimit || 0),
+      summaryBatchSize: Number(stats.summaryBatchSize || 0),
+      summarizedMessageCount: Number(stats.summarizedMessageCount || 0),
+      recentMessageCount: Number(stats.recentMessageCount || 0),
+      summaryTokens: Number(stats.summaryTokens || 0),
+      compressedHistoryTokens: Number(stats.compressedHistoryTokens || 0),
+      fullHistoryTokens: Number(stats.fullHistoryTokens || 0),
+      compressedRequestTokens: Number(stats.compressedRequestTokens || 0),
+      fullRequestTokens: Number(stats.fullRequestTokens || 0),
+      savedTokens: Number(stats.savedTokens || 0),
+      savingsRatio: Number(stats.savingsRatio || 0),
+      compressionRuns: Number(stats.compressionRuns || 0)
     };
   }
 }
