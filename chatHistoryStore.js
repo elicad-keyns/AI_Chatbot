@@ -46,6 +46,7 @@ class ChatHistoryStore {
       title: this.cleanTitle(options.title) || "New chat",
       createdAt: options.createdAt || now,
       updatedAt: options.updatedAt || now,
+      tokenStats: options.tokenStats || null,
       messages: []
     };
 
@@ -70,7 +71,7 @@ class ChatHistoryStore {
     return chat ? chat.messages.map((message) => ({ ...message })) : [];
   }
 
-  addMessages(userId, chatId, messages) {
+  addMessages(userId, chatId, messages, tokenStats = null) {
     const chat = this.findChat(userId, chatId);
     if (!chat) return null;
 
@@ -80,6 +81,9 @@ class ChatHistoryStore {
     chat.messages.push(...nextMessages);
     chat.messages = chat.messages.slice(-MAX_MESSAGES_PER_CHAT);
     chat.updatedAt = new Date().toISOString();
+    if (tokenStats) {
+      chat.tokenStats = tokenStats;
+    }
 
     if (chat.title === "New chat") {
       const firstUserMessage = nextMessages.find((message) => message.role === "user");
@@ -98,6 +102,7 @@ class ChatHistoryStore {
     if (!chat) return null;
 
     chat.messages = [];
+    chat.tokenStats = null;
     chat.updatedAt = new Date().toISOString();
     this.sortChats();
     this.save();
@@ -152,6 +157,7 @@ class ChatHistoryStore {
           title: this.cleanTitle(chat?.title) || "New chat",
           createdAt: this.cleanDate(chat?.createdAt) || now,
           updatedAt: this.cleanDate(chat?.updatedAt) || now,
+          tokenStats: this.sanitizeTokenStats(chat?.tokenStats),
           messages: this.sanitizeMessages(chat?.messages)
         };
       })
@@ -184,6 +190,7 @@ class ChatHistoryStore {
         title: firstUserMessage ? this.titleFromMessage(firstUserMessage.content) : "Legacy chat",
         createdAt: now,
         updatedAt: now,
+        tokenStats: null,
         messages: safeMessages
       }
     ];
@@ -197,7 +204,8 @@ class ChatHistoryStore {
       createdAt: chat.createdAt,
       updatedAt: chat.updatedAt,
       messageCount: chat.messages.length,
-      preview: lastMessage?.content || ""
+      preview: lastMessage?.content || "",
+      tokenStats: this.sanitizeTokenStats(chat.tokenStats)
     };
   }
 
@@ -220,6 +228,29 @@ class ChatHistoryStore {
   cleanDate(value) {
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  }
+
+  sanitizeTokenStats(stats) {
+    if (!stats || typeof stats !== "object") return null;
+
+    return {
+      model: String(stats.model || ""),
+      estimate: Boolean(stats.estimate),
+      currentMessageTokens: Number(stats.currentMessageTokens || 0),
+      historyTokens: Number(stats.historyTokens || 0),
+      instructionTokens: Number(stats.instructionTokens || 0),
+      requestTokens: Number(stats.requestTokens || 0),
+      responseTokens: Number(stats.responseTokens || 0),
+      totalTokens: Number(stats.totalTokens || 0),
+      contextLimit: Number(stats.contextLimit || 0),
+      remainingTokens: Number(stats.remainingTokens || 0),
+      usageRatio: Number(stats.usageRatio || 0),
+      overLimit: Boolean(stats.overLimit),
+      warningLevel: String(stats.warningLevel || "ok"),
+      estimatedCostUsd: Number(stats.estimatedCostUsd || 0),
+      inputCostUsd: Number(stats.inputCostUsd || 0),
+      outputCostUsd: Number(stats.outputCostUsd || 0)
+    };
   }
 }
 

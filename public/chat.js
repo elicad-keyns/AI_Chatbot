@@ -21,10 +21,18 @@ const authError = document.querySelector("#authError");
 const registerButton = document.querySelector("#registerButton");
 const logoutButton = document.querySelector("#logoutButton");
 const userBadge = document.querySelector("#userBadge");
+const metricCurrentTokens = document.querySelector("#metricCurrentTokens");
+const metricHistoryTokens = document.querySelector("#metricHistoryTokens");
+const metricRequestTokens = document.querySelector("#metricRequestTokens");
+const metricResponseTokens = document.querySelector("#metricResponseTokens");
+const metricTokenLimit = document.querySelector("#metricTokenLimit");
+const metricTokenCost = document.querySelector("#metricTokenCost");
+const tokenWarning = document.querySelector("#tokenWarning");
 
 let chats = [];
 let activeChatId = null;
 let currentUser = null;
+let tokenPreviewTimer = null;
 const messages = [];
 
 function getSavedTheme() {
@@ -54,11 +62,81 @@ function getSelectedModel() {
   return chatModel.value === "custom" ? customModel.value.trim() : chatModel.value;
 }
 
+function formatNumber(value) {
+  return Number.isFinite(Number(value)) ? Number(value).toLocaleString("ru-RU") : "0";
+}
+
+function formatUsd(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return "$0.000000";
+  if (amount < 0.000001) return "< $0.000001";
+  return `$${amount.toFixed(6)}`;
+}
+
+function updateTokenMetrics(stats) {
+  const tokenStats = stats || {};
+  metricCurrentTokens.textContent = formatNumber(tokenStats.currentMessageTokens);
+  metricHistoryTokens.textContent = formatNumber(tokenStats.historyTokens);
+  metricRequestTokens.textContent = formatNumber(tokenStats.requestTokens);
+  metricResponseTokens.textContent = formatNumber(tokenStats.responseTokens);
+  metricTokenLimit.textContent = formatNumber(tokenStats.contextLimit);
+  metricTokenCost.textContent = formatUsd(tokenStats.estimatedCostUsd);
+
+  tokenWarning.classList.toggle("error", tokenStats.warningLevel === "error");
+  tokenWarning.classList.toggle("warning", tokenStats.warningLevel === "warning");
+
+  if (!tokenStats.contextLimit) {
+    tokenWarning.textContent = "";
+  } else if (tokenStats.overLimit) {
+    tokenWarning.textContent = `Контекст переполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов. Запрос не будет отправлен.`;
+  } else if (tokenStats.warningLevel === "warning") {
+    tokenWarning.textContent = `Контекст почти заполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов.`;
+  } else {
+    tokenWarning.textContent = `Осталось примерно ${formatNumber(tokenStats.remainingTokens)} токенов контекста.`;
+  }
+}
+
+function scheduleTokenPreview() {
+  clearTimeout(tokenPreviewTimer);
+  tokenPreviewTimer = setTimeout(loadTokenPreview, 220);
+}
+
+async function loadTokenPreview() {
+  if (!currentUser) {
+    updateTokenMetrics(null);
+    return;
+  }
+
+  const response = await fetch("/api/chat/tokens", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      chatId: activeChatId,
+      message: chatInput.value,
+      model: getSelectedModel()
+    })
+  });
+
+  if (response.status === 401) {
+    showAuth();
+    return;
+  }
+
+  if (!response.ok) return;
+  const payload = await response.json();
+  updateTokenMetrics(payload.tokenStats);
+}
+
 function setCurrentUser(user) {
   currentUser = user || null;
   userBadge.textContent = currentUser?.login || "";
   userBadge.classList.toggle("hidden", !currentUser);
   logoutButton.classList.toggle("hidden", !currentUser);
+  if (!currentUser) {
+    updateTokenMetrics(null);
+  }
 }
 
 function showAuth(message = "") {
@@ -218,6 +296,7 @@ function renderChatList() {
 function setActiveChat(chat) {
   activeChatId = chat?.id || null;
   activeChatTitle.textContent = chat?.title || "Новый чат";
+  updateTokenMetrics(chat?.tokenStats);
   renderChatList();
 }
 
@@ -237,6 +316,9 @@ function upsertChat(chat) {
   chats.sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
   if (chat.id === activeChatId) {
     activeChatTitle.textContent = chat.title || "Новый чат";
+    if (chat.tokenStats) {
+      updateTokenMetrics(chat.tokenStats);
+    }
   }
   renderChatList();
 }
@@ -298,6 +380,7 @@ async function readChatStream(response, assistantText) {
 
       if (eventName === "meta" && payload.chat) {
         upsertChat(payload.chat);
+        updateTokenMetrics(payload.tokenStats || payload.chat.tokenStats);
       }
 
       if (eventName === "error") {
@@ -338,6 +421,7 @@ async function loadChats(preferredChatId = activeChatId) {
 
   setActiveChat(null);
   renderMessages([]);
+  updateTokenMetrics(null);
 }
 
 async function loadChat(chatId) {
@@ -356,7 +440,9 @@ async function loadChat(chatId) {
   upsertChat(chat);
   setActiveChat(chat);
   renderMessages(chat.messages);
+  updateTokenMetrics(chat.tokenStats);
   setStatus("готов");
+  scheduleTokenPreview();
 }
 
 async function createNewChat() {
@@ -389,6 +475,8 @@ async function createNewChat() {
   upsertChat(chat);
   setActiveChat(chat);
   renderMessages([]);
+  updateTokenMetrics(null);
+  scheduleTokenPreview();
   chatInput.focus();
 }
 
@@ -424,6 +512,7 @@ async function deleteChat(chatId) {
     } else {
       setActiveChat(null);
       renderMessages([]);
+      updateTokenMetrics(null);
       setStatus("готов");
     }
     return;
@@ -452,6 +541,7 @@ async function sendChatMessage(event) {
   addMessage("user", content);
   chatInput.value = "";
   chatInput.style.height = "";
+  scheduleTokenPreview();
 
   const assistantText = addMessage("assistant", "");
   messages.push({ role: "assistant", content: "" });
@@ -499,6 +589,7 @@ async function sendChatMessage(event) {
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "";
   chatInput.style.height = `${Math.min(chatInput.scrollHeight, 180)}px`;
+  scheduleTokenPreview();
 });
 
 chatInput.addEventListener("keydown", (event) => {
@@ -513,7 +604,10 @@ chatModel.addEventListener("change", () => {
   if (chatModel.value === "custom") {
     customModel.focus();
   }
+  scheduleTokenPreview();
 });
+
+customModel.addEventListener("input", scheduleTokenPreview);
 
 newChatButton.addEventListener("click", () => {
   createNewChat().catch(() => {

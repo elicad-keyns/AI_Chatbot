@@ -684,6 +684,56 @@ textarea:focus {
   width: 210px;
 }
 
+.token-panel {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(92px, 1fr));
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.token-card {
+  display: grid;
+  gap: 3px;
+  min-height: 50px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.token-card span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.token-card strong {
+  color: var(--ink);
+  font-size: 0.96rem;
+  line-height: 1.2;
+}
+
+.token-warning {
+  grid-column: 1 / -1;
+  min-height: 18px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.token-warning.warning {
+  color: var(--blue);
+}
+
+.token-warning.error {
+  color: var(--red);
+}
+
 .message-list {
   display: flex;
   flex-direction: column;
@@ -830,6 +880,10 @@ textarea:focus {
     width: 100%;
     justify-content: flex-start;
   }
+
+  .token-panel {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
@@ -882,6 +936,11 @@ textarea:focus {
   .chat-toolbar .status-pill,
   .chat-toolbar .ghost-button {
     flex: 1;
+  }
+
+  .token-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px;
   }
 
   .chat-message {

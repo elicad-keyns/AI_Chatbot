@@ -74,6 +74,34 @@
             </div>
           </div>
 
+          <section class="token-panel" aria-label="Token usage">
+            <div class="token-card">
+              <span>Текущий</span>
+              <strong id="metricCurrentTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>История</span>
+              <strong id="metricHistoryTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Запрос</span>
+              <strong id="metricRequestTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Ответ</span>
+              <strong id="metricResponseTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Лимит</span>
+              <strong id="metricTokenLimit">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Стоимость</span>
+              <strong id="metricTokenCost">$0.000000</strong>
+            </div>
+            <p class="token-warning" id="tokenWarning"></p>
+          </section>
+
           <div class="message-list" id="messageList" aria-live="polite"></div>
           <form class="chat-composer" id="chatForm">
             <textarea id="chatInput" rows="2" placeholder="Напишите сообщение агенту..." required></textarea>

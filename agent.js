@@ -1,5 +1,6 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const ChatHistoryStore = require("./chatHistoryStore");
+const tokenMeter = require("./tokenMeter");
 
 class ChatAgent {
   constructor(options = {}) {
@@ -35,6 +36,18 @@ class ChatAgent {
 
   deleteChat(userId, chatId) {
     return this.historyStore.deleteChat(userId, chatId);
+  }
+
+  getTokenSummary({ userId, chatId, message = "", model }) {
+    const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
+    const historyMessages = chatId ? this.getHistory(userId, chatId) : [];
+
+    return tokenMeter.buildPromptMetrics({
+      historyMessages,
+      currentMessage: message,
+      instructions: this.instructions,
+      model: selectedModel
+    });
   }
 
   buildRequestBody({ messages, model }) {
@@ -85,7 +98,19 @@ class ChatAgent {
         content: userMessage
       }
     ];
-    const requestBody = this.buildRequestBody({ messages: requestMessages, model });
+    const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
+    const promptMetrics = tokenMeter.buildPromptMetrics({
+      historyMessages: requestMessages.slice(0, -1),
+      currentMessage: userMessage,
+      instructions: this.instructions,
+      model: selectedModel
+    });
+
+    if (promptMetrics.overLimit) {
+      throw new Error(`Token limit exceeded: request uses about ${promptMetrics.requestTokens} tokens, model limit is ${promptMetrics.contextLimit}.`);
+    }
+
+    const requestBody = this.buildRequestBody({ messages: requestMessages, model: selectedModel });
     const response = await this.fetch(this.apiUrl, {
       method: "POST",
       headers: {
@@ -124,6 +149,12 @@ class ChatAgent {
     });
 
     if (assistantMessage.trim()) {
+      const finalMetrics = tokenMeter.buildFinalMetrics({
+        promptMetrics,
+        usage: openAiResult?.usage,
+        responseText: assistantMessage,
+        model: selectedModel
+      });
       const updatedChat = this.historyStore.addMessages(userId, chat.id, [
         {
           role: "user",
@@ -133,10 +164,11 @@ class ChatAgent {
           role: "assistant",
           content: assistantMessage
         }
-      ]);
+      ], finalMetrics);
       onComplete?.({
         response: openAiResult,
-        chat: updatedChat
+        chat: updatedChat,
+        tokenStats: finalMetrics
       });
     }
   }

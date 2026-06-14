@@ -256,12 +256,14 @@ async function handleChatStream(req, res) {
             id: response?.id || null,
             model: response?.model || model || null,
             usage: response?.usage || null,
+            tokenStats: chat?.tokenStats || null,
             chat: chat
               ? {
                 id: chat.id,
                 title: chat.title,
                 updatedAt: chat.updatedAt,
-                messageCount: chat.messageCount
+                messageCount: chat.messageCount,
+                tokenStats: chat.tokenStats || null
               }
               : null
           });
@@ -288,6 +290,30 @@ async function handleChatStream(req, res) {
       error: error.message
     });
   }
+}
+
+async function handleChatTokenPreview(req, res) {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    sendAuthRequired(res);
+    return;
+  }
+
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const rawBody = await readRequestBody(req);
+  const payload = JSON.parse(rawBody || "{}");
+  const tokenStats = chatAgent.getTokenSummary({
+    userId: user.id,
+    chatId: String(payload.chatId || "").trim(),
+    message: String(payload.message || ""),
+    model: String(payload.model || "")
+  });
+
+  sendJson(res, 200, { tokenStats });
 }
 
 async function handleChats(req, res) {
@@ -463,6 +489,15 @@ const server = http.createServer((req, res) => {
     handleAuth(req, res).catch((error) => {
       const statusCode = error.message.includes("exists") ? 409 : 400;
       sendJson(res, statusCode, { error: error.message });
+    });
+    return;
+  }
+
+  if (url.pathname === "/api/chat/tokens") {
+    handleChatTokenPreview(req, res).catch((error) => {
+      sendJson(res, error.message.includes("large") ? 413 : 500, {
+        error: error.message
+      });
     });
     return;
   }
