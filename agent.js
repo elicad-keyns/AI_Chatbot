@@ -13,12 +13,28 @@ class ChatAgent {
     ].join(" ");
   }
 
-  getHistory() {
-    return this.historyStore.getMessages();
+  listChats() {
+    return this.historyStore.listChats();
   }
 
-  clearHistory() {
-    return this.historyStore.clear();
+  createChat(options) {
+    return this.historyStore.createChat(options);
+  }
+
+  getChat(chatId) {
+    return this.historyStore.getChat(chatId);
+  }
+
+  getHistory(chatId) {
+    return this.historyStore.getMessages(chatId);
+  }
+
+  clearHistory(chatId) {
+    return this.historyStore.clearChat(chatId);
+  }
+
+  deleteChat(chatId) {
+    return this.historyStore.deleteChat(chatId);
   }
 
   buildRequestBody({ messages, model }) {
@@ -50,14 +66,20 @@ class ChatAgent {
       .join("\n\n");
   }
 
-  async streamResponse({ apiKey, message, model, signal, onText, onComplete }) {
+  async streamResponse({ apiKey, chatId, message, model, signal, onReady, onText, onComplete }) {
     const userMessage = String(message || "").trim();
     if (!userMessage) {
       throw new Error("Message is required.");
     }
 
+    const chat = this.historyStore.ensureChat(chatId, {
+      title: this.historyStore.titleFromMessage(userMessage)
+    });
+    const readyChat = this.getChat(chat.id) || chat;
+    onReady?.(readyChat);
+
     const requestMessages = [
-      ...this.getHistory(),
+      ...this.getHistory(chat.id),
       {
         role: "user",
         content: userMessage
@@ -79,6 +101,7 @@ class ChatAgent {
     }
 
     let assistantMessage = "";
+    let openAiResult = null;
 
     await this.readSseStream(response.body, {
       onEvent: (event) => {
@@ -89,7 +112,7 @@ class ChatAgent {
         }
 
         if (event.type === "response.completed") {
-          onComplete?.(event.response || null);
+          openAiResult = event.response || null;
           return;
         }
 
@@ -101,7 +124,7 @@ class ChatAgent {
     });
 
     if (assistantMessage.trim()) {
-      this.historyStore.addMessages([
+      const updatedChat = this.historyStore.addMessages(chat.id, [
         {
           role: "user",
           content: userMessage
@@ -111,6 +134,10 @@ class ChatAgent {
           content: assistantMessage
         }
       ]);
+      onComplete?.({
+        response: openAiResult,
+        chat: updatedChat
+      });
     }
   }
 

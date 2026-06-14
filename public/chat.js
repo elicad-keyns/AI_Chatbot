@@ -8,9 +8,14 @@ const customModel = document.querySelector("#customModel");
 const customModelWrap = document.querySelector("#customModelWrap");
 const chatApiKey = document.querySelector("#chatApiKey");
 const clearChatButton = document.querySelector("#clearChat");
+const newChatButton = document.querySelector("#newChat");
+const chatList = document.querySelector("#chatList");
+const activeChatTitle = document.querySelector("#activeChatTitle");
 const themeToggle = document.querySelector("#themeToggle");
 const themeIcon = document.querySelector("#themeIcon");
 
+let chats = [];
+let activeChatId = null;
 const messages = [];
 
 function getSavedTheme() {
@@ -74,8 +79,64 @@ function renderMessages(nextMessages) {
   });
 
   if (!messages.length) {
-    addMessage("assistant", "Привет! Я отдельный агент с сохранением контекста. Выберите модель, напишите запрос, и я отвечу потоком.");
+    addMessage("assistant", "Привет! Выберите чат слева или начните новый диалог. Я буду помнить контекст внутри выбранного чата.");
   }
+}
+
+function renderChatList() {
+  chatList.innerHTML = "";
+
+  if (!chats.length) {
+    const empty = document.createElement("p");
+    empty.className = "chat-list-empty";
+    empty.textContent = "История пока пуста.";
+    chatList.append(empty);
+    return;
+  }
+
+  chats.forEach((chat) => {
+    const button = document.createElement("button");
+    button.className = "chat-list-item";
+    button.type = "button";
+    button.classList.toggle("active", chat.id === activeChatId);
+    button.dataset.chatId = chat.id;
+
+    const title = document.createElement("strong");
+    title.textContent = chat.title || "Новый чат";
+
+    const preview = document.createElement("span");
+    preview.textContent = chat.preview || `${chat.messageCount || 0} сообщений`;
+
+    button.append(title, preview);
+    button.addEventListener("click", () => loadChat(chat.id));
+    chatList.append(button);
+  });
+}
+
+function setActiveChat(chat) {
+  activeChatId = chat?.id || null;
+  activeChatTitle.textContent = chat?.title || "Новый чат";
+  renderChatList();
+}
+
+function upsertChat(chat) {
+  if (!chat?.id) return;
+
+  const existingIndex = chats.findIndex((item) => item.id === chat.id);
+  if (existingIndex === -1) {
+    chats.unshift(chat);
+  } else {
+    chats[existingIndex] = {
+      ...chats[existingIndex],
+      ...chat
+    };
+  }
+
+  chats.sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+  if (chat.id === activeChatId) {
+    activeChatTitle.textContent = chat.title || "Новый чат";
+  }
+  renderChatList();
 }
 
 function updateLastAssistantMessage(text) {
@@ -121,11 +182,20 @@ async function readChatStream(response, assistantText) {
 
     buffer += decoder.decode(value, { stream: true });
     buffer = parseSseEvents(buffer, (eventName, payload) => {
+      if (eventName === "chat" && payload.chat) {
+        setActiveChat(payload.chat);
+        upsertChat(payload.chat);
+      }
+
       if (eventName === "delta") {
         fullText += payload.delta || "";
         assistantText.textContent = fullText;
         updateLastAssistantMessage(fullText);
         messageList.scrollTop = messageList.scrollHeight;
+      }
+
+      if (eventName === "meta" && payload.chat) {
+        upsertChat(payload.chat);
       }
 
       if (eventName === "error") {
@@ -138,6 +208,66 @@ async function readChatStream(response, assistantText) {
     assistantText.textContent = "Ответ не был получен.";
     updateLastAssistantMessage(assistantText.textContent);
   }
+}
+
+async function loadChats(preferredChatId = activeChatId) {
+  const response = await fetch("/api/chats");
+  if (!response.ok) {
+    throw new Error(`Chats request failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  chats = Array.isArray(payload.chats) ? payload.chats : [];
+  renderChatList();
+
+  const nextChatId = preferredChatId && chats.some((chat) => chat.id === preferredChatId)
+    ? preferredChatId
+    : chats[0]?.id || null;
+
+  if (nextChatId) {
+    await loadChat(nextChatId);
+    return;
+  }
+
+  setActiveChat(null);
+  renderMessages([]);
+}
+
+async function loadChat(chatId) {
+  const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`);
+  if (!response.ok) {
+    throw new Error(`Chat request failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const chat = payload.chat;
+  upsertChat(chat);
+  setActiveChat(chat);
+  renderMessages(chat.messages);
+  setStatus("готов");
+}
+
+async function createNewChat() {
+  const response = await fetch("/api/chats", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      title: "Новый чат"
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Create chat failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const chat = payload.chat;
+  upsertChat(chat);
+  setActiveChat(chat);
+  renderMessages([]);
+  chatInput.focus();
 }
 
 async function sendChatMessage(event) {
@@ -170,6 +300,7 @@ async function sendChatMessage(event) {
       },
       body: JSON.stringify({
         apiKey: chatApiKey.value,
+        chatId: activeChatId,
         model,
         message: content
       })
@@ -193,22 +324,6 @@ async function sendChatMessage(event) {
   }
 }
 
-async function loadHistory() {
-  try {
-    const response = await fetch("/api/chat/history");
-    if (!response.ok) {
-      throw new Error(`History request failed: ${response.status}`);
-    }
-
-    const payload = await response.json();
-    renderMessages(payload.messages);
-    setStatus("готов");
-  } catch {
-    renderMessages([]);
-    setStatus("ошибка", "error");
-  }
-}
-
 chatInput.addEventListener("input", () => {
   chatInput.style.height = "";
   chatInput.style.height = `${Math.min(chatInput.scrollHeight, 180)}px`;
@@ -228,10 +343,26 @@ chatModel.addEventListener("change", () => {
   }
 });
 
+newChatButton.addEventListener("click", () => {
+  createNewChat().catch(() => {
+    setStatus("ошибка", "error");
+  });
+});
+
 clearChatButton.addEventListener("click", () => {
-  fetch("/api/chat/history", { method: "DELETE" })
+  if (!activeChatId) {
+    renderMessages([]);
+    return;
+  }
+
+  fetch(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, { method: "DELETE" })
     .then((response) => {
       if (!response.ok) throw new Error(`Clear failed: ${response.status}`);
+      return response.json();
+    })
+    .then((payload) => {
+      upsertChat(payload.chat);
+      setActiveChat(payload.chat);
       renderMessages([]);
       setStatus("готов");
       chatInput.focus();
@@ -245,4 +376,7 @@ themeToggle.addEventListener("click", toggleTheme);
 chatForm.addEventListener("submit", sendChatMessage);
 
 applyTheme(getSavedTheme());
-loadHistory();
+loadChats().catch(() => {
+  renderMessages([]);
+  setStatus("ошибка", "error");
+});

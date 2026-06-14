@@ -23,6 +23,17 @@
 
       <section class="chat-layout">
         <aside class="chat-settings" aria-label="Chat settings">
+          <section class="chat-history-panel" aria-labelledby="chatHistoryTitle">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">History</p>
+                <h2 id="chatHistoryTitle">Чаты</h2>
+              </div>
+              <button class="ghost-button compact" id="newChat" type="button">Новый</button>
+            </div>
+            <div class="chat-list" id="chatList"></div>
+          </section>
+
           <label for="chatModel">
             <span>Модель</span>
             <select id="chatModel" name="chatModel">
@@ -48,11 +59,12 @@
           </label>
 
           <p class="field-note">Ключ можно не вводить, если на сервере задан OPENAI_API_KEY. История хранится на сервере и восстанавливается после перезапуска.</p>
-          <button class="ghost-button" id="clearChat" type="button">Очистить чат</button>
+          <button class="ghost-button" id="clearChat" type="button">Очистить выбранный чат</button>
         </aside>
 
         <section class="chat-window" aria-label="Chat">
           <div class="chat-status-row">
+            <strong class="active-chat-title" id="activeChatTitle">Новый чат</strong>
             <span class="status-pill" id="chatStatus">готов</span>
           </div>
           <div class="message-list" id="messageList" aria-live="polite"></div>

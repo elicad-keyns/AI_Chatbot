@@ -31,6 +31,10 @@ function sendSse(res, eventName, payload) {
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
+function getUrl(req) {
+  return new URL(req.url, `http://${req.headers.host || "localhost"}`);
+}
+
 function readRequestBody(req) {
   return new Promise((resolve, reject) => {
     let bytes = 0;
@@ -117,6 +121,7 @@ async function handleChatStream(req, res) {
     const rawBody = await readRequestBody(req);
     const payload = JSON.parse(rawBody || "{}");
     const apiKey = String(payload.apiKey || process.env.OPENAI_API_KEY || "").trim();
+    const chatId = String(payload.chatId || "").trim();
     const message = String(payload.message || "").trim();
     const model = String(payload.model || "").trim();
 
@@ -150,20 +155,41 @@ async function handleChatStream(req, res) {
 
     await chatAgent.streamResponse({
       apiKey,
+      chatId,
       message,
       model,
       signal: abortController.signal,
+      onReady: (chat) => {
+        if (!res.writableEnded) {
+          sendSse(res, "chat", {
+            chat: {
+              id: chat.id,
+              title: chat.title,
+              updatedAt: chat.updatedAt,
+              messageCount: chat.messageCount
+            }
+          });
+        }
+      },
       onText: (delta) => {
         if (!res.writableEnded) {
           sendSse(res, "delta", { delta });
         }
       },
-      onComplete: (response) => {
+      onComplete: ({ response, chat }) => {
         if (!res.writableEnded) {
           sendSse(res, "meta", {
             id: response?.id || null,
             model: response?.model || model || null,
-            usage: response?.usage || null
+            usage: response?.usage || null,
+            chat: chat
+              ? {
+                id: chat.id,
+                title: chat.title,
+                updatedAt: chat.updatedAt,
+                messageCount: chat.messageCount
+              }
+              : null
           });
         }
       }
@@ -190,17 +216,85 @@ async function handleChatStream(req, res) {
   }
 }
 
+async function handleChats(req, res) {
+  const url = getUrl(req);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const chatId = parts[2] || "";
+
+  if (parts.length === 2 && req.method === "GET") {
+    sendJson(res, 200, {
+      chats: chatAgent.listChats()
+    });
+    return;
+  }
+
+  if (parts.length === 2 && req.method === "POST") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const chat = chatAgent.createChat({
+      title: payload.title
+    });
+
+    sendJson(res, 201, { chat });
+    return;
+  }
+
+  if (parts.length === 3 && req.method === "GET") {
+    const chat = chatAgent.getChat(chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  if (parts.length === 3 && req.method === "DELETE") {
+    const deleted = chatAgent.deleteChat(chatId);
+    if (!deleted) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, {
+      chats: chatAgent.listChats()
+    });
+    return;
+  }
+
+  if (parts.length === 4 && parts[3] === "messages" && req.method === "DELETE") {
+    const chat = chatAgent.clearHistory(chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  sendJson(res, 405, { error: "Method not allowed." });
+}
+
 function handleChatHistory(req, res) {
+  const firstChat = chatAgent.listChats()[0] || null;
+
   if (req.method === "GET") {
     sendJson(res, 200, {
-      messages: chatAgent.getHistory()
+      messages: firstChat ? chatAgent.getHistory(firstChat.id) : []
     });
     return;
   }
 
   if (req.method === "DELETE") {
+    if (!firstChat) {
+      sendJson(res, 200, { messages: [] });
+      return;
+    }
+
     sendJson(res, 200, {
-      messages: chatAgent.clearHistory()
+      messages: chatAgent.clearHistory(firstChat.id)?.messages || []
     });
     return;
   }
@@ -232,23 +326,34 @@ function serveStatic(req, res) {
 }
 
 const server = http.createServer((req, res) => {
-  if (req.method === "POST" && req.url === "/api/openai") {
+  const url = getUrl(req);
+
+  if (req.method === "POST" && url.pathname === "/api/openai") {
     handleOpenAiProxy(req, res);
     return;
   }
 
-  if (req.method === "POST" && req.url === "/api/chat") {
+  if (req.method === "POST" && url.pathname === "/api/chat") {
     handleChatStream(req, res);
     return;
   }
 
-  if (req.url === "/api/chat/history") {
+  if (url.pathname === "/api/chat/history") {
     handleChatHistory(req, res);
     return;
   }
 
+  if (url.pathname === "/api/chats" || url.pathname.startsWith("/api/chats/")) {
+    handleChats(req, res).catch((error) => {
+      sendJson(res, error.message.includes("large") ? 413 : 500, {
+        error: error.message
+      });
+    });
+    return;
+  }
+
   if (req.method === "GET") {
-    if (req.url === "/chat" || req.url === "/chat/") {
+    if (url.pathname === "/chat" || url.pathname === "/chat/") {
       req.url = "/chat.html";
     }
 
