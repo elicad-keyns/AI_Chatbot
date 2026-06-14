@@ -9,6 +9,7 @@ const customModelWrap = document.querySelector("#customModelWrap");
 const contextStrategy = document.querySelector("#contextStrategy");
 const windowSize = document.querySelector("#windowSize");
 const showFactsButton = document.querySelector("#showFacts");
+const showStrategyEffectButton = document.querySelector("#showStrategyEffect");
 const compressionToggle = document.querySelector("#compressionToggle");
 const compressionBatchSize = document.querySelector("#compressionBatchSize");
 const showCompressionButton = document.querySelector("#showCompression");
@@ -52,6 +53,7 @@ let chats = [];
 let activeChatId = null;
 let currentUser = null;
 let tokenPreviewTimer = null;
+let latestTokenStats = null;
 const messages = [];
 
 function getSavedTheme() {
@@ -189,6 +191,7 @@ function updateAssistantTokenBadge(textElement, stats) {
 
 function updateTokenMetrics(stats) {
   const tokenStats = stats || {};
+  latestTokenStats = stats || null;
   const compression = tokenStats.compression || {};
   const strategy = tokenStats.strategy || {};
   metricCurrentTokens.textContent = formatNumber(tokenStats.currentMessageTokens);
@@ -723,6 +726,89 @@ function showFactsMemory() {
   summaryOverlay.classList.remove("hidden");
 }
 
+function getStrategyEffectNotes(strategyName) {
+  if (strategyName === "facts") {
+    return {
+      positive: [
+        "Стабильно держит важные договоренности, ограничения и предпочтения.",
+        "Тратит меньше токенов, чем полная история, потому что отправляет facts + окно.",
+        "Удобно для длинного сбора требований, где важны решения, а не все реплики."
+      ],
+      negative: [
+        "Facts могут быть неполными, если модель плохо извлекла ключевые данные.",
+        "Есть дополнительный служебный запрос на обновление facts после сообщения пользователя.",
+        "Плохо хранит нюансы формулировок, если они не попали в key-value память."
+      ]
+    };
+  }
+
+  if (strategyName === "branching") {
+    return {
+      positive: [
+        "Позволяет безопасно сравнивать разные варианты продолжения от одного checkpoint.",
+        "Ветки не смешивают сообщения после развилки.",
+        "Удобно для экспериментов с архитектурой, тоном ответа или альтернативными ТЗ."
+      ],
+      negative: [
+        "Пользователю нужно явно ставить checkpoint и выбирать ветку.",
+        "Каждая ветка хранит собственную историю, поэтому суммарно данных становится больше.",
+        "Старые важные детали всё равно ограничены размером окна контекста."
+      ]
+    };
+  }
+
+  return {
+    positive: [
+      "Самая простая и предсказуемая стратегия.",
+      "Хорошо экономит токены на длинных диалогах.",
+      "Нет дополнительного служебного запроса на память."
+    ],
+    negative: [
+      "Старые важные детали отбрасываются.",
+      "Может терять ограничения и решения, если они вышли за окно.",
+      "Не подходит для длинного сбора требований без повторения ключевых фактов."
+    ]
+  };
+}
+
+function showStrategyEffect() {
+  const chat = getActiveChat();
+  const strategyName = contextStrategy.value || getChatStrategy(chat);
+  const savedStrategyStats = latestTokenStats?.strategy || chat?.tokenStats?.strategy || {};
+  const strategyStats = savedStrategyStats.name === strategyName ? savedStrategyStats : {};
+  const effect = getStrategyEffectNotes(strategyName);
+
+  summaryTitle.textContent = "Эффект стратегии";
+  summaryStats.innerHTML = "";
+  [
+    ["Стратегия", strategyName],
+    ["Окно", `${formatNumber(strategyStats.windowSize || getChatWindowSize(chat))} сообщений`],
+    ["В prompt", `${formatNumber(strategyStats.contextMessageCount)} сообщений`],
+    ["Полная история", `${formatNumber(strategyStats.storedMessageCount)} сообщений`],
+    ["Токены prompt", formatNumber(strategyStats.requestTokens || latestTokenStats?.requestTokens)],
+    ["Токены полной", formatNumber(strategyStats.fullRequestTokens)],
+    ["Экономия", `${formatNumber(strategyStats.savedTokens)} (${formatPercent(strategyStats.savingsRatio)})`]
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "summary-stat";
+    const name = document.createElement("span");
+    name.textContent = label;
+    const content = document.createElement("strong");
+    content.textContent = value;
+    item.append(name, content);
+    summaryStats.append(item);
+  });
+
+  summaryText.textContent = [
+    "Положительный эффект:",
+    ...effect.positive.map((item) => `+ ${item}`),
+    "",
+    "Негативный эффект / риски:",
+    ...effect.negative.map((item) => `- ${item}`)
+  ].join("\n");
+  summaryOverlay.classList.remove("hidden");
+}
+
 function hideCompressionSummary() {
   summaryOverlay.classList.add("hidden");
 }
@@ -907,6 +993,7 @@ compressionBatchSize.addEventListener("change", () => {
 });
 compressionBatchSize.addEventListener("input", scheduleTokenPreview);
 showFactsButton.addEventListener("click", showFactsMemory);
+showStrategyEffectButton.addEventListener("click", showStrategyEffect);
 showCompressionButton.addEventListener("click", showCompressionSummary);
 closeSummaryButton.addEventListener("click", hideCompressionSummary);
 summaryOverlay.addEventListener("click", (event) => {

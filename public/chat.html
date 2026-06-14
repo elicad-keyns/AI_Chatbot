@@ -45,68 +45,72 @@
             </div>
 
             <div class="chat-toolbar" aria-label="Настройки чата">
-              <label class="toolbar-field" for="chatModel">
-                <span>Модель</span>
-                <select id="chatModel" name="chatModel">
-                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-                  <option value="gpt-4.1">gpt-4.1</option>
-                  <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-                  <option value="gpt-4o-mini">gpt-4o-mini</option>
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-5-mini">gpt-5-mini</option>
-                  <option value="gpt-5">gpt-5</option>
-                  <option value="custom">custom</option>
-                </select>
-              </label>
+              <div class="toolbar-row">
+                <label class="toolbar-field" for="chatModel">
+                  <span>Модель</span>
+                  <select id="chatModel" name="chatModel">
+                    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                    <option value="gpt-4.1">gpt-4.1</option>
+                    <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-5-mini">gpt-5-mini</option>
+                    <option value="gpt-5">gpt-5</option>
+                    <option value="custom">custom</option>
+                  </select>
+                </label>
 
-              <label id="customModelWrap" class="toolbar-field hidden" for="customModel">
-                <span>Custom</span>
-                <input id="customModel" name="customModel" type="text" placeholder="model-id" spellcheck="false">
-              </label>
+                <label id="customModelWrap" class="toolbar-field hidden" for="customModel">
+                  <span>Custom</span>
+                  <input id="customModel" name="customModel" type="text" placeholder="model-id" spellcheck="false">
+                </label>
 
-              <label class="toolbar-field strategy-field" for="contextStrategy">
-                <span>Стратегия</span>
-                <select id="contextStrategy" name="contextStrategy">
-                  <option value="sliding">Sliding Window</option>
-                  <option value="facts">Sticky Facts</option>
-                  <option value="branching">Branching</option>
-                </select>
-              </label>
+                <label class="toolbar-field strategy-field" for="contextStrategy">
+                  <span>Стратегия</span>
+                  <select id="contextStrategy" name="contextStrategy">
+                    <option value="sliding">Sliding Window</option>
+                    <option value="facts">Sticky Facts</option>
+                    <option value="branching">Branching</option>
+                  </select>
+                </label>
 
-              <label class="toolbar-field compact-number-field" for="windowSize">
-                <span>Окно</span>
-                <input id="windowSize" name="windowSize" type="number" min="2" max="40" step="1" value="8">
-              </label>
+                <label class="toolbar-field compact-number-field" for="windowSize">
+                  <span>Окно</span>
+                  <input id="windowSize" name="windowSize" type="number" min="2" max="40" step="1" value="8">
+                </label>
 
-              <button class="ghost-button compact" id="showFacts" type="button">Facts</button>
+                <label class="toolbar-field api-key-field" for="chatApiKey">
+                  <span>API key</span>
+                  <input id="chatApiKey" name="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY или sk-...">
+                </label>
+              </div>
 
-              <label class="toolbar-switch" for="compressionToggle">
-                <input id="compressionToggle" name="compressionToggle" type="checkbox" checked>
-                <span>Компрессия</span>
-              </label>
+              <div class="toolbar-row">
+                <button class="ghost-button compact" id="showFacts" type="button">Facts</button>
+                <button class="ghost-button compact" id="showStrategyEffect" type="button">Эффект</button>
 
-              <label class="toolbar-field compact-number-field" for="compressionBatchSize">
-                <span>Порог</span>
-                <input id="compressionBatchSize" name="compressionBatchSize" type="number" min="2" max="80" step="1" value="10">
-              </label>
+                <label class="toolbar-field branch-field" for="branchSelect">
+                  <span>Ветка</span>
+                  <select id="branchSelect" name="branchSelect"></select>
+                </label>
 
-              <button class="ghost-button compact" id="showCompression" type="button">Summary</button>
+                <button class="ghost-button compact" id="saveCheckpoint" type="button">Checkpoint</button>
+                <button class="ghost-button compact" id="createBranch" type="button">Branch</button>
 
-              <label class="toolbar-field branch-field" for="branchSelect">
-                <span>Ветка</span>
-                <select id="branchSelect" name="branchSelect"></select>
-              </label>
+                <label class="toolbar-switch hidden" for="compressionToggle">
+                  <input id="compressionToggle" name="compressionToggle" type="checkbox" checked>
+                  <span>Компрессия</span>
+                </label>
 
-              <button class="ghost-button compact" id="saveCheckpoint" type="button">Checkpoint</button>
-              <button class="ghost-button compact" id="createBranch" type="button">Branch</button>
+                <label class="toolbar-field compact-number-field hidden" for="compressionBatchSize">
+                  <span>Порог</span>
+                  <input id="compressionBatchSize" name="compressionBatchSize" type="number" min="2" max="80" step="1" value="10">
+                </label>
 
-              <label class="toolbar-field api-key-field" for="chatApiKey">
-                <span>API key</span>
-                <input id="chatApiKey" name="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY или sk-...">
-              </label>
-
-              <button class="ghost-button compact" id="clearChat" type="button">Очистить</button>
-              <span class="status-pill" id="chatStatus">готов</span>
+                <button class="ghost-button compact hidden" id="showCompression" type="button">Summary</button>
+                <button class="ghost-button compact" id="clearChat" type="button">Очистить</button>
+                <span class="status-pill" id="chatStatus">готов</span>
+              </div>
             </div>
           </div>
 
