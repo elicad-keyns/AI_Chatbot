@@ -171,7 +171,8 @@ class ChatHistoryStore {
     return messages
       .map((message) => ({
         role: VALID_ROLES.has(message?.role) ? message.role : "user",
-        content: String(message?.content || "").trim()
+        content: String(message?.content || "").trim(),
+        tokenStats: this.sanitizeTokenStats(message?.tokenStats)
       }))
       .filter((message) => message.content)
       .slice(-MAX_MESSAGES_PER_CHAT);

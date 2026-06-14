@@ -768,6 +768,10 @@ textarea:focus {
 }
 
 .chat-message-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   color: var(--muted);
   font-size: 0.74rem;
   font-weight: 800;
@@ -776,7 +780,23 @@ textarea:focus {
 }
 
 .chat-message.user .chat-message-label {
+  justify-content: flex-end;
   text-align: right;
+}
+
+.message-token-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  line-height: 1.2;
+  text-transform: none;
 }
 
 .chat-message-text {

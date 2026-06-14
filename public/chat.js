@@ -73,6 +73,27 @@ function formatUsd(value) {
   return `$${amount.toFixed(6)}`;
 }
 
+function formatMessageTokenSummary(stats) {
+  if (!stats) return "";
+
+  const requestTokens = Number(stats.requestTokens || 0);
+  const responseTokens = Number(stats.responseTokens || 0);
+  const totalTokens = Number(stats.totalTokens || requestTokens + responseTokens);
+
+  if (!requestTokens && !responseTokens && !totalTokens) return "";
+  return `Запрос ${formatNumber(requestTokens)} | Ответ ${formatNumber(responseTokens)} | Всего ${formatNumber(totalTokens)}`;
+}
+
+function updateAssistantTokenBadge(textElement, stats) {
+  const message = textElement?.closest?.(".chat-message.assistant");
+  const badge = message?.querySelector(".message-token-badge");
+  if (!badge) return;
+
+  const summary = formatMessageTokenSummary(stats);
+  badge.textContent = summary;
+  badge.classList.toggle("hidden", !summary);
+}
+
 function updateTokenMetrics(stats) {
   const tokenStats = stats || {};
   metricCurrentTokens.textContent = formatNumber(tokenStats.currentMessageTokens);
@@ -208,13 +229,22 @@ async function logout() {
   showAuth();
 }
 
-function addMessage(role, content = "") {
+function addMessage(role, content = "", tokenStats = null) {
   const message = document.createElement("article");
   message.className = `chat-message ${role}`;
 
   const label = document.createElement("span");
   label.className = "chat-message-label";
   label.textContent = role === "assistant" ? "Agent" : "You";
+
+  if (role === "assistant") {
+    const tokenBadge = document.createElement("span");
+    tokenBadge.className = "message-token-badge";
+    const summary = formatMessageTokenSummary(tokenStats);
+    tokenBadge.textContent = summary;
+    tokenBadge.classList.toggle("hidden", !summary);
+    label.append(tokenBadge);
+  }
 
   const text = document.createElement("div");
   text.className = "chat-message-text";
@@ -237,8 +267,9 @@ function renderMessages(nextMessages) {
     const content = String(message.content || "").trim();
     if (!content) return;
 
-    messages.push({ role, content });
-    addMessage(role, content);
+    const tokenStats = role === "assistant" ? message.tokenStats : null;
+    messages.push({ role, content, tokenStats });
+    addMessage(role, content, tokenStats);
   });
 
   if (!messages.length) {
@@ -323,10 +354,13 @@ function upsertChat(chat) {
   renderChatList();
 }
 
-function updateLastAssistantMessage(text) {
+function updateLastAssistantMessage(text, tokenStats = null) {
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === "assistant") {
     lastMessage.content = text;
+    if (tokenStats) {
+      lastMessage.tokenStats = tokenStats;
+    }
   }
 }
 
@@ -380,7 +414,10 @@ async function readChatStream(response, assistantText) {
 
       if (eventName === "meta" && payload.chat) {
         upsertChat(payload.chat);
-        updateTokenMetrics(payload.tokenStats || payload.chat.tokenStats);
+        const tokenStats = payload.tokenStats || payload.chat.tokenStats;
+        updateTokenMetrics(tokenStats);
+        updateLastAssistantMessage(fullText, tokenStats);
+        updateAssistantTokenBadge(assistantText, tokenStats);
       }
 
       if (eventName === "error") {

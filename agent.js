@@ -162,7 +162,8 @@ class ChatAgent {
         },
         {
           role: "assistant",
-          content: assistantMessage
+          content: assistantMessage,
+          tokenStats: finalMetrics
         }
       ], finalMetrics);
       onComplete?.({
