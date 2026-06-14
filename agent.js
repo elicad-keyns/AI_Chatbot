@@ -1,19 +1,29 @@
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const ChatHistoryStore = require("./chatHistoryStore");
 
 class ChatAgent {
   constructor(options = {}) {
     this.apiUrl = options.apiUrl || OPENAI_RESPONSES_URL;
     this.fetch = options.fetchImpl || fetch;
     this.defaultModel = options.defaultModel || "gpt-4.1-mini";
+    this.historyStore = options.historyStore || new ChatHistoryStore(options.historyFilePath);
     this.instructions = options.instructions || [
       "You are a helpful AI chat agent.",
       "Answer clearly, naturally, and in the same language the user uses when possible."
     ].join(" ");
   }
 
-  buildRequestBody({ message, messages, model }) {
+  getHistory() {
+    return this.historyStore.getMessages();
+  }
+
+  clearHistory() {
+    return this.historyStore.clear();
+  }
+
+  buildRequestBody({ messages, model }) {
     const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
-    const conversation = this.buildConversationInput(message, messages);
+    const conversation = this.buildConversationInput(messages);
 
     return {
       model: selectedModel,
@@ -24,7 +34,7 @@ class ChatAgent {
     };
   }
 
-  buildConversationInput(message, messages) {
+  buildConversationInput(messages) {
     const safeMessages = Array.isArray(messages)
       ? messages
         .map((item) => ({
@@ -35,20 +45,25 @@ class ChatAgent {
         .slice(-20)
       : [];
 
-    if (!safeMessages.length && message) {
-      safeMessages.push({
-        role: "user",
-        content: String(message).trim()
-      });
-    }
-
     return safeMessages
       .map((item) => `${item.role === "assistant" ? "Assistant" : "User"}: ${item.content}`)
       .join("\n\n");
   }
 
-  async streamResponse({ apiKey, message, messages, model, signal, onText, onComplete }) {
-    const requestBody = this.buildRequestBody({ message, messages, model });
+  async streamResponse({ apiKey, message, model, signal, onText, onComplete }) {
+    const userMessage = String(message || "").trim();
+    if (!userMessage) {
+      throw new Error("Message is required.");
+    }
+
+    const requestMessages = [
+      ...this.getHistory(),
+      {
+        role: "user",
+        content: userMessage
+      }
+    ];
+    const requestBody = this.buildRequestBody({ messages: requestMessages, model });
     const response = await this.fetch(this.apiUrl, {
       method: "POST",
       headers: {
@@ -63,10 +78,13 @@ class ChatAgent {
       throw new Error(await this.formatOpenAiError(response));
     }
 
+    let assistantMessage = "";
+
     await this.readSseStream(response.body, {
       onEvent: (event) => {
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
-          onText(event.delta);
+          assistantMessage += event.delta;
+          onText?.(event.delta);
           return;
         }
 
@@ -81,6 +99,19 @@ class ChatAgent {
         }
       }
     });
+
+    if (assistantMessage.trim()) {
+      this.historyStore.addMessages([
+        {
+          role: "user",
+          content: userMessage
+        },
+        {
+          role: "assistant",
+          content: assistantMessage
+        }
+      ]);
+    }
   }
 
   async formatOpenAiError(response) {

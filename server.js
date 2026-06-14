@@ -119,7 +119,6 @@ async function handleChatStream(req, res) {
     const apiKey = String(payload.apiKey || process.env.OPENAI_API_KEY || "").trim();
     const message = String(payload.message || "").trim();
     const model = String(payload.model || "").trim();
-    const messages = Array.isArray(payload.messages) ? payload.messages : [];
 
     if (!apiKey) {
       sendJson(res, 400, {
@@ -128,7 +127,7 @@ async function handleChatStream(req, res) {
       return;
     }
 
-    if (!message && !messages.length) {
+    if (!message) {
       sendJson(res, 400, {
         error: "Message is required."
       });
@@ -152,7 +151,6 @@ async function handleChatStream(req, res) {
     await chatAgent.streamResponse({
       apiKey,
       message,
-      messages,
       model,
       signal: abortController.signal,
       onText: (delta) => {
@@ -192,6 +190,24 @@ async function handleChatStream(req, res) {
   }
 }
 
+function handleChatHistory(req, res) {
+  if (req.method === "GET") {
+    sendJson(res, 200, {
+      messages: chatAgent.getHistory()
+    });
+    return;
+  }
+
+  if (req.method === "DELETE") {
+    sendJson(res, 200, {
+      messages: chatAgent.clearHistory()
+    });
+    return;
+  }
+
+  sendJson(res, 405, { error: "Method not allowed." });
+}
+
 function serveStatic(req, res) {
   const filePath = safeStaticPath(req.url);
   if (!filePath) {
@@ -223,6 +239,11 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && req.url === "/api/chat") {
     handleChatStream(req, res);
+    return;
+  }
+
+  if (req.url === "/api/chat/history") {
+    handleChatHistory(req, res);
     return;
   }
 

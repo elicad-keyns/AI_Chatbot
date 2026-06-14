@@ -59,6 +59,25 @@ function addMessage(role, content = "") {
   return text;
 }
 
+function renderMessages(nextMessages) {
+  messages.length = 0;
+  messageList.innerHTML = "";
+
+  const safeMessages = Array.isArray(nextMessages) ? nextMessages : [];
+  safeMessages.forEach((message) => {
+    const role = message.role === "assistant" ? "assistant" : "user";
+    const content = String(message.content || "").trim();
+    if (!content) return;
+
+    messages.push({ role, content });
+    addMessage(role, content);
+  });
+
+  if (!messages.length) {
+    addMessage("assistant", "Привет! Я отдельный агент с сохранением контекста. Выберите модель, напишите запрос, и я отвечу потоком.");
+  }
+}
+
 function updateLastAssistantMessage(text) {
   const lastMessage = messages[messages.length - 1];
   if (lastMessage?.role === "assistant") {
@@ -152,8 +171,7 @@ async function sendChatMessage(event) {
       body: JSON.stringify({
         apiKey: chatApiKey.value,
         model,
-        message: content,
-        messages: messages.slice(0, -1)
+        message: content
       })
     });
 
@@ -172,6 +190,22 @@ async function sendChatMessage(event) {
     sendMessageButton.disabled = false;
     chatInput.disabled = false;
     chatInput.focus();
+  }
+}
+
+async function loadHistory() {
+  try {
+    const response = await fetch("/api/chat/history");
+    if (!response.ok) {
+      throw new Error(`History request failed: ${response.status}`);
+    }
+
+    const payload = await response.json();
+    renderMessages(payload.messages);
+    setStatus("готов");
+  } catch {
+    renderMessages([]);
+    setStatus("ошибка", "error");
   }
 }
 
@@ -195,14 +229,20 @@ chatModel.addEventListener("change", () => {
 });
 
 clearChatButton.addEventListener("click", () => {
-  messages.length = 0;
-  messageList.innerHTML = "";
-  setStatus("готов");
-  chatInput.focus();
+  fetch("/api/chat/history", { method: "DELETE" })
+    .then((response) => {
+      if (!response.ok) throw new Error(`Clear failed: ${response.status}`);
+      renderMessages([]);
+      setStatus("готов");
+      chatInput.focus();
+    })
+    .catch(() => {
+      setStatus("ошибка", "error");
+    });
 });
 
 themeToggle.addEventListener("click", toggleTheme);
 chatForm.addEventListener("submit", sendChatMessage);
 
 applyTheme(getSavedTheme());
-addMessage("assistant", "Привет! Я отдельный агент. Выберите модель, напишите запрос, и я отвечу потоком.");
+loadHistory();

@@ -5,5 +5,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 *.log
+data/*.json
+data/*.json.tmp
 .DS_Store
 Thumbs.db
