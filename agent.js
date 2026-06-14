@@ -40,17 +40,37 @@ class ChatAgent {
     return this.historyStore.deleteChat(userId, chatId);
   }
 
-  getTokenSummary({ userId, chatId, message = "", model }) {
+  updateChatSettings(userId, chatId, settings) {
+    return this.historyStore.updateChatSettings(userId, chatId, settings);
+  }
+
+  resolveCompressionEnabled(chat, explicitValue) {
+    if (typeof explicitValue === "boolean") return explicitValue;
+    return chat?.settings?.compressionEnabled !== false;
+  }
+
+  resolveSummaryBatchSize(chat, explicitValue) {
+    const value = Number(explicitValue || chat?.settings?.summaryBatchSize || 10);
+    return Number.isFinite(value) ? Math.max(2, Math.round(value)) : 10;
+  }
+
+  getTokenSummary({ userId, chatId, message = "", model, compressionEnabled, summaryBatchSize }) {
     const selectedModel = String(model || this.defaultModel).trim() || this.defaultModel;
     const chat = chatId ? this.getChat(userId, chatId) : null;
     const historyMessages = chat?.messages || [];
+    const resolvedCompressionEnabled = this.resolveCompressionEnabled(chat, compressionEnabled);
+    const resolvedSummaryBatchSize = this.resolveSummaryBatchSize(chat, summaryBatchSize);
 
     return this.contextManager.buildMetrics({
       memory: chat?.memory,
       storedHistoryMessages: historyMessages,
       currentMessage: message,
       instructions: this.instructions,
-      model: selectedModel
+      model: selectedModel,
+      compressionEnabled: resolvedCompressionEnabled,
+      settings: {
+        summaryBatchSize: resolvedSummaryBatchSize
+      }
     });
   }
 
@@ -85,25 +105,36 @@ class ChatAgent {
       .join("\n\n");
   }
 
-  async streamResponse({ apiKey, userId, chatId, message, model, signal, onReady, onText, onComplete }) {
+  async streamResponse({ apiKey, userId, chatId, message, model, compressionEnabled, summaryBatchSize, signal, onReady, onText, onComplete }) {
     const userMessage = String(message || "").trim();
     if (!userMessage) {
       throw new Error("Message is required.");
     }
 
     const chat = this.historyStore.ensureChat(userId, chatId, {
-      title: this.historyStore.titleFromMessage(userMessage)
+      title: this.historyStore.titleFromMessage(userMessage),
+      settings: {
+        compressionEnabled: compressionEnabled !== false,
+        summaryBatchSize: this.resolveSummaryBatchSize(null, summaryBatchSize)
+      }
     });
     const readyChat = this.getChat(userId, chat.id) || chat;
     onReady?.(readyChat);
 
-    const compressedChat = await this.compressChatContext({
-      apiKey,
-      userId,
-      chatId: chat.id,
-      model: String(model || this.defaultModel).trim() || this.defaultModel,
-      signal
-    });
+    const compressionActive = this.resolveCompressionEnabled(readyChat, compressionEnabled);
+    const resolvedSummaryBatchSize = this.resolveSummaryBatchSize(readyChat, summaryBatchSize);
+    const compressedChat = compressionActive
+      ? await this.compressChatContext({
+        apiKey,
+        userId,
+        chatId: chat.id,
+        model: String(model || this.defaultModel).trim() || this.defaultModel,
+        settings: {
+          summaryBatchSize: resolvedSummaryBatchSize
+        },
+        signal
+      })
+      : null;
     const activeChat = compressedChat || this.getChat(userId, chat.id) || readyChat;
     if (compressedChat) {
       onReady?.(activeChat);
@@ -122,14 +153,20 @@ class ChatAgent {
       storedHistoryMessages: requestMessages.slice(0, -1),
       currentMessage: userMessage,
       instructions: this.instructions,
-      model: selectedModel
+      model: selectedModel,
+      compressionEnabled: compressionActive,
+      settings: {
+        summaryBatchSize: resolvedSummaryBatchSize
+      }
     });
 
     if (promptMetrics.overLimit) {
       throw new Error(`Token limit exceeded: request uses about ${promptMetrics.requestTokens} tokens, model limit is ${promptMetrics.contextLimit}.`);
     }
 
-    const contextMessages = this.contextManager.buildContextMessages(activeChat.memory, requestMessages);
+    const contextMessages = this.contextManager.buildContextMessages(activeChat.memory, requestMessages, {
+      compressionEnabled: compressionActive
+    });
     const requestBody = this.buildRequestBody({ messages: contextMessages, model: selectedModel });
     const response = await this.fetch(this.apiUrl, {
       method: "POST",
@@ -194,7 +231,7 @@ class ChatAgent {
     }
   }
 
-  async compressChatContext({ apiKey, userId, chatId, model, signal }) {
+  async compressChatContext({ apiKey, userId, chatId, model, settings, signal }) {
     const chat = this.getChat(userId, chatId);
     if (!chat) return null;
 
@@ -205,6 +242,7 @@ class ChatAgent {
       model,
       memory: chat.memory,
       messages: chat.messages,
+      settings,
       signal
     });
 

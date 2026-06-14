@@ -674,6 +674,34 @@ textarea:focus {
   width: 160px;
 }
 
+.compact-number-field {
+  width: 96px;
+}
+
+.toolbar-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--label);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.toolbar-switch input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: var(--blue);
+}
+
+.toolbar-switch span {
+  white-space: nowrap;
+}
+
 .toolbar-field span {
   color: var(--muted);
   font-size: 0.72rem;
@@ -845,6 +873,86 @@ textarea:focus {
   display: none;
 }
 
+.summary-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 21;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 20, 27, 0.5);
+}
+
+.summary-overlay.hidden {
+  display: none;
+}
+
+.summary-dialog {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 36px));
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.summary-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.summary-stat {
+  display: grid;
+  gap: 3px;
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.summary-stat span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.summary-stat strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.86rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-text {
+  min-height: 220px;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+  font: 0.84rem/1.55 "Cascadia Code", Consolas, "Courier New", monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .auth-dialog {
   display: grid;
   gap: 14px;
@@ -960,8 +1068,13 @@ textarea:focus {
   }
 
   .toolbar-field,
-  .api-key-field {
+  .api-key-field,
+  .toolbar-switch {
     width: 100%;
+  }
+
+  .summary-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chat-toolbar .status-pill,

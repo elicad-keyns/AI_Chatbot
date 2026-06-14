@@ -197,6 +197,10 @@ async function handleChatStream(req, res) {
     const chatId = String(payload.chatId || "").trim();
     const message = String(payload.message || "").trim();
     const model = String(payload.model || "").trim();
+    const compressionEnabled = typeof payload.compressionEnabled === "boolean"
+      ? payload.compressionEnabled
+      : undefined;
+    const summaryBatchSize = Number(payload.summaryBatchSize || 0) || undefined;
 
     if (!apiKey) {
       sendJson(res, 400, {
@@ -232,6 +236,8 @@ async function handleChatStream(req, res) {
       chatId,
       message,
       model,
+      compressionEnabled,
+      summaryBatchSize,
       signal: abortController.signal,
       onReady: (chat) => {
         if (!res.writableEnded) {
@@ -240,7 +246,9 @@ async function handleChatStream(req, res) {
               id: chat.id,
               title: chat.title,
               updatedAt: chat.updatedAt,
-              messageCount: chat.messageCount
+              messageCount: chat.messageCount,
+              settings: chat.settings || null,
+              memory: chat.memory || null
             }
           });
         }
@@ -263,6 +271,8 @@ async function handleChatStream(req, res) {
                 title: chat.title,
                 updatedAt: chat.updatedAt,
                 messageCount: chat.messageCount,
+                settings: chat.settings || null,
+                memory: chat.memory || null,
                 tokenStats: chat.tokenStats || null
               }
               : null
@@ -310,7 +320,11 @@ async function handleChatTokenPreview(req, res) {
     userId: user.id,
     chatId: String(payload.chatId || "").trim(),
     message: String(payload.message || ""),
-    model: String(payload.model || "")
+    model: String(payload.model || ""),
+    compressionEnabled: typeof payload.compressionEnabled === "boolean"
+      ? payload.compressionEnabled
+      : undefined,
+    summaryBatchSize: Number(payload.summaryBatchSize || 0) || undefined
   });
 
   sendJson(res, 200, { tokenStats });
@@ -338,7 +352,11 @@ async function handleChats(req, res) {
     const rawBody = await readRequestBody(req);
     const payload = JSON.parse(rawBody || "{}");
     const chat = chatAgent.createChat(user.id, {
-      title: payload.title
+      title: payload.title,
+      settings: {
+        compressionEnabled: payload.compressionEnabled !== false,
+        summaryBatchSize: payload.summaryBatchSize
+      }
     });
 
     sendJson(res, 201, { chat });
@@ -347,6 +365,28 @@ async function handleChats(req, res) {
 
   if (parts.length === 3 && req.method === "GET") {
     const chat = chatAgent.getChat(user.id, chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  if (parts.length === 3 && req.method === "PATCH") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const nextSettings = {};
+    if (typeof payload.compressionEnabled === "boolean") {
+      nextSettings.compressionEnabled = payload.compressionEnabled;
+    }
+    if (payload.summaryBatchSize !== undefined) {
+      nextSettings.summaryBatchSize = payload.summaryBatchSize;
+    }
+
+    const chat = chatAgent.updateChatSettings(user.id, chatId, nextSettings);
+
     if (!chat) {
       sendJson(res, 404, { error: "Chat not found." });
       return;

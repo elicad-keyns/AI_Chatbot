@@ -64,6 +64,18 @@
                 <input id="customModel" name="customModel" type="text" placeholder="model-id" spellcheck="false">
               </label>
 
+              <label class="toolbar-switch" for="compressionToggle">
+                <input id="compressionToggle" name="compressionToggle" type="checkbox" checked>
+                <span>Компрессия</span>
+              </label>
+
+              <label class="toolbar-field compact-number-field" for="compressionBatchSize">
+                <span>Порог</span>
+                <input id="compressionBatchSize" name="compressionBatchSize" type="number" min="2" max="80" step="1" value="10">
+              </label>
+
+              <button class="ghost-button compact" id="showCompression" type="button">Summary</button>
+
               <label class="toolbar-field api-key-field" for="chatApiKey">
                 <span>API key</span>
                 <input id="chatApiKey" name="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY или sk-...">
@@ -143,6 +155,20 @@
           <button class="ghost-button" id="registerButton" type="button">Регистрация</button>
         </div>
       </form>
+    </div>
+
+    <div class="summary-overlay hidden" id="summaryOverlay" role="dialog" aria-modal="true" aria-labelledby="summaryTitle">
+      <section class="summary-dialog">
+        <header class="summary-dialog-head">
+          <div>
+            <p class="eyebrow">Compression</p>
+            <h2 id="summaryTitle">Текущая компрессия</h2>
+          </div>
+          <button class="icon-button" id="closeSummary" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <div class="summary-stats" id="summaryStats"></div>
+        <pre class="summary-text" id="summaryText"></pre>
+      </section>
     </div>
 
     <script src="/chat.js"></script>

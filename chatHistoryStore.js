@@ -16,6 +16,10 @@ const EMPTY_MEMORY = {
   summaryBatchSize: 0,
   updatedAt: null
 };
+const DEFAULT_CHAT_SETTINGS = {
+  compressionEnabled: true,
+  summaryBatchSize: 10
+};
 
 class ChatHistoryStore {
   constructor(filePath = process.env.CHAT_HISTORY_FILE || DEFAULT_HISTORY_FILE) {
@@ -57,6 +61,7 @@ class ChatHistoryStore {
       createdAt: options.createdAt || now,
       updatedAt: options.updatedAt || now,
       tokenStats: options.tokenStats || null,
+      settings: this.sanitizeSettings(options.settings),
       memory: this.sanitizeMemory(options.memory),
       messages: []
     };
@@ -114,6 +119,20 @@ class ChatHistoryStore {
 
     chat.messages = this.sanitizeMessages(messages);
     chat.memory = this.sanitizeMemory(memory);
+    chat.updatedAt = new Date().toISOString();
+    this.sortChats();
+    this.save();
+    return this.cloneChat(chat);
+  }
+
+  updateChatSettings(userId, chatId, settings = {}) {
+    const chat = this.findChat(userId, chatId);
+    if (!chat) return null;
+
+    chat.settings = this.sanitizeSettings({
+      ...chat.settings,
+      ...settings
+    });
     chat.updatedAt = new Date().toISOString();
     this.sortChats();
     this.save();
@@ -182,6 +201,7 @@ class ChatHistoryStore {
           createdAt: this.cleanDate(chat?.createdAt) || now,
           updatedAt: this.cleanDate(chat?.updatedAt) || now,
           tokenStats: this.sanitizeTokenStats(chat?.tokenStats),
+          settings: this.sanitizeSettings(chat?.settings),
           memory: this.sanitizeMemory(chat?.memory),
           messages: this.sanitizeMessages(chat?.messages)
         };
@@ -217,6 +237,7 @@ class ChatHistoryStore {
         createdAt: now,
         updatedAt: now,
         tokenStats: null,
+        settings: this.sanitizeSettings(),
         memory: this.sanitizeMemory(),
         messages: safeMessages
       }
@@ -232,6 +253,7 @@ class ChatHistoryStore {
       updatedAt: chat.updatedAt,
       messageCount: this.getVisibleMessageCount(chat),
       preview: lastMessage?.content || "",
+      settings: this.sanitizeSettings(chat.settings),
       memory: this.toMemorySummary(chat.memory),
       tokenStats: this.sanitizeTokenStats(chat.tokenStats)
     };
@@ -280,6 +302,19 @@ class ChatHistoryStore {
     };
   }
 
+  sanitizeSettings(settings = {}) {
+    if (!settings || typeof settings !== "object") return { ...DEFAULT_CHAT_SETTINGS };
+
+    const summaryBatchSize = Number(settings.summaryBatchSize || DEFAULT_CHAT_SETTINGS.summaryBatchSize);
+
+    return {
+      compressionEnabled: settings.compressionEnabled !== false,
+      summaryBatchSize: Number.isFinite(summaryBatchSize)
+        ? Math.min(80, Math.max(2, Math.round(summaryBatchSize)))
+        : DEFAULT_CHAT_SETTINGS.summaryBatchSize
+    };
+  }
+
   toMemorySummary(memory = {}) {
     const safeMemory = this.sanitizeMemory(memory);
     return {
@@ -317,6 +352,7 @@ class ChatHistoryStore {
     if (!stats || typeof stats !== "object") {
       return {
         enabled: false,
+        configured: true,
         recentMessageLimit: 0,
         summaryBatchSize: 0,
         summarizedMessageCount: 0,
@@ -334,6 +370,7 @@ class ChatHistoryStore {
 
     return {
       enabled: Boolean(stats.enabled),
+      configured: stats.configured !== false,
       recentMessageLimit: Number(stats.recentMessageLimit || 0),
       summaryBatchSize: Number(stats.summaryBatchSize || 0),
       summarizedMessageCount: Number(stats.summarizedMessageCount || 0),

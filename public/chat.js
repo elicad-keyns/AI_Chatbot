@@ -6,6 +6,9 @@ const chatStatus = document.querySelector("#chatStatus");
 const chatModel = document.querySelector("#chatModel");
 const customModel = document.querySelector("#customModel");
 const customModelWrap = document.querySelector("#customModelWrap");
+const compressionToggle = document.querySelector("#compressionToggle");
+const compressionBatchSize = document.querySelector("#compressionBatchSize");
+const showCompressionButton = document.querySelector("#showCompression");
 const chatApiKey = document.querySelector("#chatApiKey");
 const clearChatButton = document.querySelector("#clearChat");
 const newChatButton = document.querySelector("#newChat");
@@ -31,6 +34,10 @@ const metricResponseTokens = document.querySelector("#metricResponseTokens");
 const metricTokenLimit = document.querySelector("#metricTokenLimit");
 const metricTokenCost = document.querySelector("#metricTokenCost");
 const tokenWarning = document.querySelector("#tokenWarning");
+const summaryOverlay = document.querySelector("#summaryOverlay");
+const closeSummaryButton = document.querySelector("#closeSummary");
+const summaryStats = document.querySelector("#summaryStats");
+const summaryText = document.querySelector("#summaryText");
 
 let chats = [];
 let activeChatId = null;
@@ -47,6 +54,24 @@ function getSavedTheme() {
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   themeIcon.textContent = theme === "dark" ? "☀" : "☾";
+}
+
+function getChatCompressionEnabled(chat) {
+  return chat?.settings?.compressionEnabled !== false;
+}
+
+function getChatCompressionBatchSize(chat) {
+  const value = Number(chat?.settings?.summaryBatchSize || 10);
+  return Number.isFinite(value) ? Math.min(80, Math.max(2, Math.round(value))) : 10;
+}
+
+function getActiveChat() {
+  return chats.find((chat) => chat.id === activeChatId) || null;
+}
+
+function applyChatCompressionSetting(chat) {
+  compressionToggle.checked = getChatCompressionEnabled(chat);
+  compressionBatchSize.value = String(getChatCompressionBatchSize(chat));
 }
 
 function toggleTheme() {
@@ -124,7 +149,9 @@ function updateTokenMetrics(stats) {
 
   const compressionNote = compression.enabled
     ? ` Сжато сообщений: ${formatNumber(compression.summarizedMessageCount)}. Последних без изменений: ${formatNumber(compression.recentMessageCount)}. Экономия: ${formatNumber(compression.savedTokens)} токенов (${formatPercent(compression.savingsRatio)}).`
-    : ` Сжатие включится после накопления ${formatNumber(compression.summaryBatchSize || 10)} старых сообщений сверх последних ${formatNumber(compression.recentMessageLimit || 8)}.`;
+    : compression.configured === false
+      ? " Компрессия выключена: summary не подставляется и новые сообщения не сжимаются."
+      : ` Сжатие включится после накопления ${formatNumber(compression.summaryBatchSize || 10)} старых сообщений сверх последних ${formatNumber(compression.recentMessageLimit || 8)}.`;
 
   if (!tokenStats.contextLimit) {
     tokenWarning.textContent = "";
@@ -156,7 +183,9 @@ async function loadTokenPreview() {
     body: JSON.stringify({
       chatId: activeChatId,
       message: chatInput.value,
-      model: getSelectedModel()
+      model: getSelectedModel(),
+      compressionEnabled: compressionToggle.checked,
+      summaryBatchSize: compressionBatchSize.value
     })
   });
 
@@ -347,6 +376,7 @@ function renderChatList() {
 function setActiveChat(chat) {
   activeChatId = chat?.id || null;
   activeChatTitle.textContent = chat?.title || "Новый чат";
+  applyChatCompressionSetting(chat);
   updateTokenMetrics(chat?.tokenStats);
   renderChatList();
 }
@@ -367,6 +397,7 @@ function upsertChat(chat) {
   chats.sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
   if (chat.id === activeChatId) {
     activeChatTitle.textContent = chat.title || "Новый чат";
+    applyChatCompressionSetting(chat);
     if (chat.tokenStats) {
       updateTokenMetrics(chat.tokenStats);
     }
@@ -514,7 +545,9 @@ async function createNewChat() {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      title: "Новый чат"
+      title: "Новый чат",
+      compressionEnabled: compressionToggle.checked,
+      summaryBatchSize: compressionBatchSize.value
     })
   });
 
@@ -535,6 +568,72 @@ async function createNewChat() {
   updateTokenMetrics(null);
   scheduleTokenPreview();
   chatInput.focus();
+}
+
+async function saveActiveChatSettings(settings = {}) {
+  if (!currentUser || !activeChatId) {
+    scheduleTokenPreview();
+    return;
+  }
+
+  const response = await fetch(`/api/chats/${encodeURIComponent(activeChatId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(settings)
+  });
+
+  if (response.status === 401) {
+    showAuth();
+    return;
+  }
+
+  if (!response.ok) {
+    throw new Error(`Save settings failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  upsertChat(payload.chat);
+  setActiveChat(payload.chat);
+  scheduleTokenPreview();
+}
+
+function showCompressionSummary() {
+  const chat = getActiveChat();
+  const memory = chat?.memory || {};
+  const settings = chat?.settings || {};
+  const stats = [
+    ["Компрессия", settings.compressionEnabled === false ? "выключена" : "включена"],
+    ["Порог", `${getChatCompressionBatchSize(chat)} сообщений`],
+    ["Сжатых сообщений", formatNumber(memory.summarizedMessageCount)],
+    ["Запусков", formatNumber(memory.compressionRuns)],
+    ["Токенов исходно", formatNumber(memory.originalTokenEstimate)],
+    ["Токенов summary", formatNumber(memory.summaryTokenEstimate)],
+    ["Обновлено", memory.updatedAt ? new Date(memory.updatedAt).toLocaleString("ru-RU") : "-"]
+  ];
+
+  summaryStats.innerHTML = "";
+  stats.forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.className = "summary-stat";
+
+    const name = document.createElement("span");
+    name.textContent = label;
+
+    const content = document.createElement("strong");
+    content.textContent = value;
+
+    item.append(name, content);
+    summaryStats.append(item);
+  });
+
+  summaryText.textContent = String(memory.summary || "").trim() || "Summary пока пустое. Оно появится после первой сработавшей компрессии в этом чате.";
+  summaryOverlay.classList.remove("hidden");
+}
+
+function hideCompressionSummary() {
+  summaryOverlay.classList.add("hidden");
 }
 
 async function deleteChat(chatId) {
@@ -616,6 +715,8 @@ async function sendChatMessage(event) {
         apiKey: chatApiKey.value,
         chatId: activeChatId,
         model,
+        compressionEnabled: compressionToggle.checked,
+        summaryBatchSize: compressionBatchSize.value,
         message: content
       })
     });
@@ -665,6 +766,35 @@ chatModel.addEventListener("change", () => {
 });
 
 customModel.addEventListener("input", scheduleTokenPreview);
+compressionToggle.addEventListener("change", () => {
+  saveActiveChatSettings({
+    compressionEnabled: compressionToggle.checked,
+    summaryBatchSize: compressionBatchSize.value
+  }).catch(() => {
+    setStatus("ошибка", "error");
+  });
+});
+compressionBatchSize.addEventListener("change", () => {
+  compressionBatchSize.value = String(getChatCompressionBatchSize({
+    settings: {
+      summaryBatchSize: compressionBatchSize.value
+    }
+  }));
+  saveActiveChatSettings({
+    compressionEnabled: compressionToggle.checked,
+    summaryBatchSize: compressionBatchSize.value
+  }).catch(() => {
+    setStatus("ошибка", "error");
+  });
+});
+compressionBatchSize.addEventListener("input", scheduleTokenPreview);
+showCompressionButton.addEventListener("click", showCompressionSummary);
+closeSummaryButton.addEventListener("click", hideCompressionSummary);
+summaryOverlay.addEventListener("click", (event) => {
+  if (event.target === summaryOverlay) {
+    hideCompressionSummary();
+  }
+});
 
 newChatButton.addEventListener("click", () => {
   createNewChat().catch(() => {

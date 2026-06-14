@@ -32,17 +32,30 @@ class ContextManager {
     };
   }
 
-  getCompressibleCount(messages) {
-    const safeMessages = Array.isArray(messages) ? messages : [];
-    const excessCount = safeMessages.length - this.recentMessageLimit;
-    return excessCount >= this.summaryBatchSize ? excessCount : 0;
+  createPolicy(settings = {}) {
+    const summaryBatchSize = Number(settings.summaryBatchSize || this.summaryBatchSize);
+
+    return {
+      recentMessageLimit: this.recentMessageLimit,
+      summaryBatchSize: Number.isFinite(summaryBatchSize)
+        ? Math.max(2, Math.round(summaryBatchSize))
+        : this.summaryBatchSize
+    };
   }
 
-  buildContextMessages(memory, messages) {
+  getCompressibleCount(messages, settings = {}) {
+    const policy = this.createPolicy(settings);
+    const safeMessages = Array.isArray(messages) ? messages : [];
+    const excessCount = safeMessages.length - policy.recentMessageLimit;
+    return excessCount >= policy.summaryBatchSize ? excessCount : 0;
+  }
+
+  buildContextMessages(memory, messages, options = {}) {
+    const compressionEnabled = options.compressionEnabled !== false;
     const safeMemory = this.createMemory(memory);
     const safeMessages = Array.isArray(messages) ? messages : [];
 
-    if (!safeMemory.summary) {
+    if (!compressionEnabled || !safeMemory.summary) {
       return safeMessages;
     }
 
@@ -60,10 +73,14 @@ class ContextManager {
     ];
   }
 
-  buildMetrics({ memory, storedHistoryMessages, currentMessage, instructions, model }) {
+  buildMetrics({ memory, storedHistoryMessages, currentMessage, instructions, model, compressionEnabled = true, settings = {} }) {
+    const policy = this.createPolicy(settings);
     const safeMemory = this.createMemory(memory);
     const safeStoredHistory = Array.isArray(storedHistoryMessages) ? storedHistoryMessages : [];
-    const compressedHistoryMessages = this.buildContextMessages(safeMemory, safeStoredHistory);
+    const compressionActive = compressionEnabled !== false;
+    const compressedHistoryMessages = this.buildContextMessages(safeMemory, safeStoredHistory, {
+      compressionEnabled: compressionActive
+    });
     const currentMessageTokens = tokenMeter.estimateTextTokens(currentMessage);
     const instructionTokens = tokenMeter.estimateTextTokens(instructions);
     const compressedHistoryTokens = tokenMeter.estimateMessagesTokens(compressedHistoryMessages);
@@ -71,7 +88,7 @@ class ContextManager {
     const fullHistoryTokens = safeMemory.originalTokenEstimate + storedHistoryTokens;
     const requestTokens = compressedHistoryTokens + currentMessageTokens + instructionTokens + 8;
     const fullRequestTokens = fullHistoryTokens + currentMessageTokens + instructionTokens + 8;
-    const savedTokens = Math.max(0, fullRequestTokens - requestTokens);
+    const savedTokens = compressionActive ? Math.max(0, fullRequestTokens - requestTokens) : 0;
     const contextLimit = tokenMeter.getModelContextLimit(model);
     const remainingTokens = contextLimit - requestTokens;
     const usageRatio = contextLimit ? requestTokens / contextLimit : 0;
@@ -93,12 +110,13 @@ class ContextManager {
       warningLevel: requestTokens > contextLimit ? "error" : usageRatio >= 0.8 ? "warning" : "ok",
       estimatedCostUsd: cost.total,
       compression: {
-        enabled: Boolean(safeMemory.summary),
-        recentMessageLimit: this.recentMessageLimit,
-        summaryBatchSize: this.summaryBatchSize,
+        configured: compressionActive,
+        enabled: compressionActive && Boolean(safeMemory.summary),
+        recentMessageLimit: policy.recentMessageLimit,
+        summaryBatchSize: policy.summaryBatchSize,
         summarizedMessageCount: safeMemory.summarizedMessageCount,
         recentMessageCount: safeStoredHistory.length,
-        summaryTokens: tokenMeter.estimateTextTokens(safeMemory.summary),
+        summaryTokens: compressionActive ? tokenMeter.estimateTextTokens(safeMemory.summary) : 0,
         compressedHistoryTokens,
         fullHistoryTokens,
         compressedRequestTokens: requestTokens,
@@ -110,9 +128,10 @@ class ContextManager {
     };
   }
 
-  async compressIfNeeded({ apiKey, apiUrl, fetchImpl, model, memory, messages, signal }) {
+  async compressIfNeeded({ apiKey, apiUrl, fetchImpl, model, memory, messages, settings = {}, signal }) {
+    const policy = this.createPolicy(settings);
     const safeMessages = Array.isArray(messages) ? messages : [];
-    const compressibleCount = this.getCompressibleCount(safeMessages);
+    const compressibleCount = this.getCompressibleCount(safeMessages, policy);
 
     if (!compressibleCount) {
       return {
@@ -148,8 +167,8 @@ class ContextManager {
       originalTokenEstimate: previousMemory.originalTokenEstimate + chunkTokenEstimate,
       summaryTokenEstimate: tokenMeter.estimateTextTokens(summary),
       compressionRuns: previousMemory.compressionRuns + 1,
-      recentMessageLimit: this.recentMessageLimit,
-      summaryBatchSize: this.summaryBatchSize,
+      recentMessageLimit: policy.recentMessageLimit,
+      summaryBatchSize: policy.summaryBatchSize,
       updatedAt: new Date().toISOString()
     });
 
