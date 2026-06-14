@@ -10,7 +10,7 @@
     <main class="chat-shell">
       <header class="chat-topbar">
         <div>
-          <p class="eyebrow">Day 6</p>
+          <p class="eyebrow">Day 7</p>
           <h1>AI Chat Agent</h1>
         </div>
         <nav class="chat-nav" aria-label="Navigation">
@@ -22,7 +22,7 @@
       </header>
 
       <section class="chat-layout">
-        <aside class="chat-settings" aria-label="Chat settings">
+        <aside class="chat-settings" aria-label="История чатов">
           <section class="chat-history-panel" aria-labelledby="chatHistoryTitle">
             <div class="section-head">
               <div>
@@ -33,40 +33,45 @@
             </div>
             <div class="chat-list" id="chatList"></div>
           </section>
-
-          <label for="chatModel">
-            <span>Модель</span>
-            <select id="chatModel" name="chatModel">
-              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-              <option value="gpt-4.1">gpt-4.1</option>
-              <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-              <option value="gpt-4o-mini">gpt-4o-mini</option>
-              <option value="gpt-4o">gpt-4o</option>
-              <option value="gpt-5-mini">gpt-5-mini</option>
-              <option value="gpt-5">gpt-5</option>
-              <option value="custom">custom</option>
-            </select>
-          </label>
-
-          <label id="customModelWrap" class="hidden" for="customModel">
-            <span>Custom model</span>
-            <input id="customModel" name="customModel" type="text" placeholder="model-id" spellcheck="false">
-          </label>
-
-          <label for="chatApiKey">
-            <span>API key</span>
-            <input id="chatApiKey" name="chatApiKey" type="password" autocomplete="off" placeholder="Railway env или sk-...">
-          </label>
-
-          <p class="field-note">Ключ можно не вводить, если на сервере задан OPENAI_API_KEY. История хранится на сервере и восстанавливается после перезапуска.</p>
-          <button class="ghost-button" id="clearChat" type="button">Очистить выбранный чат</button>
         </aside>
 
         <section class="chat-window" aria-label="Chat">
           <div class="chat-status-row">
-            <strong class="active-chat-title" id="activeChatTitle">Новый чат</strong>
-            <span class="status-pill" id="chatStatus">готов</span>
+            <div class="chat-title-block">
+              <strong class="active-chat-title" id="activeChatTitle">Новый чат</strong>
+              <span class="field-note">Контекст хранится внутри выбранного чата.</span>
+            </div>
+
+            <div class="chat-toolbar" aria-label="Настройки чата">
+              <label class="toolbar-field" for="chatModel">
+                <span>Модель</span>
+                <select id="chatModel" name="chatModel">
+                  <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                  <option value="gpt-4.1">gpt-4.1</option>
+                  <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini</option>
+                  <option value="gpt-4o">gpt-4o</option>
+                  <option value="gpt-5-mini">gpt-5-mini</option>
+                  <option value="gpt-5">gpt-5</option>
+                  <option value="custom">custom</option>
+                </select>
+              </label>
+
+              <label id="customModelWrap" class="toolbar-field hidden" for="customModel">
+                <span>Custom</span>
+                <input id="customModel" name="customModel" type="text" placeholder="model-id" spellcheck="false">
+              </label>
+
+              <label class="toolbar-field api-key-field" for="chatApiKey">
+                <span>API key</span>
+                <input id="chatApiKey" name="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY или sk-...">
+              </label>
+
+              <button class="ghost-button compact" id="clearChat" type="button">Очистить</button>
+              <span class="status-pill" id="chatStatus">готов</span>
+            </div>
           </div>
+
           <div class="message-list" id="messageList" aria-live="polite"></div>
           <form class="chat-composer" id="chatForm">
             <textarea id="chatInput" rows="2" placeholder="Напишите сообщение агенту..." required></textarea>

@@ -95,10 +95,13 @@ function renderChatList() {
   }
 
   chats.forEach((chat) => {
+    const row = document.createElement("div");
+    row.className = "chat-list-row";
+    row.classList.toggle("active", chat.id === activeChatId);
+
     const button = document.createElement("button");
     button.className = "chat-list-item";
     button.type = "button";
-    button.classList.toggle("active", chat.id === activeChatId);
     button.dataset.chatId = chat.id;
 
     const title = document.createElement("strong");
@@ -109,7 +112,21 @@ function renderChatList() {
 
     button.append(title, preview);
     button.addEventListener("click", () => loadChat(chat.id));
-    chatList.append(button);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "icon-button delete-chat-button";
+    deleteButton.type = "button";
+    deleteButton.title = "Удалить чат";
+    deleteButton.setAttribute("aria-label", "Удалить чат");
+    deleteButton.textContent = "×";
+    deleteButton.addEventListener("click", () => {
+      deleteChat(chat.id).catch(() => {
+        setStatus("РѕС€РёР±РєР°", "error");
+      });
+    });
+
+    row.append(button, deleteButton);
+    chatList.append(row);
   });
 }
 
@@ -268,6 +285,36 @@ async function createNewChat() {
   setActiveChat(chat);
   renderMessages([]);
   chatInput.focus();
+}
+
+async function deleteChat(chatId) {
+  if (!chatId) return;
+  if (!window.confirm("Удалить этот чат?")) return;
+
+  const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
+    method: "DELETE"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Delete chat failed: ${response.status}`);
+  }
+
+  const payload = await response.json();
+  chats = Array.isArray(payload.chats) ? payload.chats : [];
+
+  if (activeChatId === chatId) {
+    const nextChat = chats[0] || null;
+    if (nextChat) {
+      await loadChat(nextChat.id);
+    } else {
+      setActiveChat(null);
+      renderMessages([]);
+      setStatus("РіРѕС‚РѕРІ");
+    }
+    return;
+  }
+
+  renderChatList();
 }
 
 async function sendChatMessage(event) {
