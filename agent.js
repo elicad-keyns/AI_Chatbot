@@ -13,28 +13,28 @@ class ChatAgent {
     ].join(" ");
   }
 
-  listChats() {
-    return this.historyStore.listChats();
+  listChats(userId) {
+    return this.historyStore.listChats(userId);
   }
 
-  createChat(options) {
-    return this.historyStore.createChat(options);
+  createChat(userId, options) {
+    return this.historyStore.createChat(userId, options);
   }
 
-  getChat(chatId) {
-    return this.historyStore.getChat(chatId);
+  getChat(userId, chatId) {
+    return this.historyStore.getChat(userId, chatId);
   }
 
-  getHistory(chatId) {
-    return this.historyStore.getMessages(chatId);
+  getHistory(userId, chatId) {
+    return this.historyStore.getMessages(userId, chatId);
   }
 
-  clearHistory(chatId) {
-    return this.historyStore.clearChat(chatId);
+  clearHistory(userId, chatId) {
+    return this.historyStore.clearChat(userId, chatId);
   }
 
-  deleteChat(chatId) {
-    return this.historyStore.deleteChat(chatId);
+  deleteChat(userId, chatId) {
+    return this.historyStore.deleteChat(userId, chatId);
   }
 
   buildRequestBody({ messages, model }) {
@@ -66,20 +66,20 @@ class ChatAgent {
       .join("\n\n");
   }
 
-  async streamResponse({ apiKey, chatId, message, model, signal, onReady, onText, onComplete }) {
+  async streamResponse({ apiKey, userId, chatId, message, model, signal, onReady, onText, onComplete }) {
     const userMessage = String(message || "").trim();
     if (!userMessage) {
       throw new Error("Message is required.");
     }
 
-    const chat = this.historyStore.ensureChat(chatId, {
+    const chat = this.historyStore.ensureChat(userId, chatId, {
       title: this.historyStore.titleFromMessage(userMessage)
     });
-    const readyChat = this.getChat(chat.id) || chat;
+    const readyChat = this.getChat(userId, chat.id) || chat;
     onReady?.(readyChat);
 
     const requestMessages = [
-      ...this.getHistory(chat.id),
+      ...this.getHistory(userId, chat.id),
       {
         role: "user",
         content: userMessage
@@ -124,7 +124,7 @@ class ChatAgent {
     });
 
     if (assistantMessage.trim()) {
-      const updatedChat = this.historyStore.addMessages(chat.id, [
+      const updatedChat = this.historyStore.addMessages(userId, chat.id, [
         {
           role: "user",
           content: userMessage

@@ -13,9 +13,18 @@ const chatList = document.querySelector("#chatList");
 const activeChatTitle = document.querySelector("#activeChatTitle");
 const themeToggle = document.querySelector("#themeToggle");
 const themeIcon = document.querySelector("#themeIcon");
+const authOverlay = document.querySelector("#authOverlay");
+const authForm = document.querySelector("#authForm");
+const authLogin = document.querySelector("#authLogin");
+const authPassword = document.querySelector("#authPassword");
+const authError = document.querySelector("#authError");
+const registerButton = document.querySelector("#registerButton");
+const logoutButton = document.querySelector("#logoutButton");
+const userBadge = document.querySelector("#userBadge");
 
 let chats = [];
 let activeChatId = null;
+let currentUser = null;
 const messages = [];
 
 function getSavedTheme() {
@@ -43,6 +52,82 @@ function setStatus(text, mode = "ready") {
 
 function getSelectedModel() {
   return chatModel.value === "custom" ? customModel.value.trim() : chatModel.value;
+}
+
+function setCurrentUser(user) {
+  currentUser = user || null;
+  userBadge.textContent = currentUser?.login || "";
+  userBadge.classList.toggle("hidden", !currentUser);
+  logoutButton.classList.toggle("hidden", !currentUser);
+}
+
+function showAuth(message = "") {
+  authError.textContent = message;
+  authOverlay.classList.remove("hidden");
+  authLogin.focus();
+}
+
+function hideAuth() {
+  authOverlay.classList.add("hidden");
+  authError.textContent = "";
+}
+
+async function authenticate(mode) {
+  const login = authLogin.value.trim();
+  const password = authPassword.value;
+
+  if (!login || !password) {
+    showAuth("Введите логин и пароль.");
+    return;
+  }
+
+  const response = await fetch(`/api/auth/${mode}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ login, password })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    showAuth(payload.error || "Не удалось войти.");
+    return;
+  }
+
+  setCurrentUser(payload.user);
+  authPassword.value = "";
+  hideAuth();
+  await loadChats(null);
+}
+
+async function checkAuth() {
+  const response = await fetch("/api/auth/me");
+  const payload = await response.json().catch(() => ({}));
+
+  if (!payload.user) {
+    setCurrentUser(null);
+    chats = [];
+    activeChatId = null;
+    renderChatList();
+    renderMessages([]);
+    showAuth();
+    return;
+  }
+
+  setCurrentUser(payload.user);
+  hideAuth();
+  await loadChats();
+}
+
+async function logout() {
+  await fetch("/api/auth/logout", { method: "POST" });
+  setCurrentUser(null);
+  chats = [];
+  activeChatId = null;
+  renderChatList();
+  renderMessages([]);
+  showAuth();
 }
 
 function addMessage(role, content = "") {
@@ -79,7 +164,7 @@ function renderMessages(nextMessages) {
   });
 
   if (!messages.length) {
-    addMessage("assistant", "Привет! Выберите чат слева или начните новый диалог. Я буду помнить контекст внутри выбранного чата.");
+    addMessage("assistant", "Привет! Войдите в аккаунт, выберите чат слева или начните новый диалог. Я буду помнить контекст внутри выбранного чата.");
   }
 }
 
@@ -89,7 +174,7 @@ function renderChatList() {
   if (!chats.length) {
     const empty = document.createElement("p");
     empty.className = "chat-list-empty";
-    empty.textContent = "История пока пуста.";
+    empty.textContent = currentUser ? "История пока пуста." : "Войдите, чтобы увидеть свои чаты.";
     chatList.append(empty);
     return;
   }
@@ -121,7 +206,7 @@ function renderChatList() {
     deleteButton.textContent = "×";
     deleteButton.addEventListener("click", () => {
       deleteChat(chat.id).catch(() => {
-        setStatus("РѕС€РёР±РєР°", "error");
+        setStatus("ошибка", "error");
       });
     });
 
@@ -229,6 +314,11 @@ async function readChatStream(response, assistantText) {
 
 async function loadChats(preferredChatId = activeChatId) {
   const response = await fetch("/api/chats");
+  if (response.status === 401) {
+    showAuth();
+    return;
+  }
+
   if (!response.ok) {
     throw new Error(`Chats request failed: ${response.status}`);
   }
@@ -252,6 +342,11 @@ async function loadChats(preferredChatId = activeChatId) {
 
 async function loadChat(chatId) {
   const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`);
+  if (response.status === 401) {
+    showAuth();
+    return;
+  }
+
   if (!response.ok) {
     throw new Error(`Chat request failed: ${response.status}`);
   }
@@ -265,6 +360,11 @@ async function loadChat(chatId) {
 }
 
 async function createNewChat() {
+  if (!currentUser) {
+    showAuth();
+    return;
+  }
+
   const response = await fetch("/api/chats", {
     method: "POST",
     headers: {
@@ -274,6 +374,11 @@ async function createNewChat() {
       title: "Новый чат"
     })
   });
+
+  if (response.status === 401) {
+    showAuth();
+    return;
+  }
 
   if (!response.ok) {
     throw new Error(`Create chat failed: ${response.status}`);
@@ -288,12 +393,22 @@ async function createNewChat() {
 }
 
 async function deleteChat(chatId) {
+  if (!currentUser) {
+    showAuth();
+    return;
+  }
+
   if (!chatId) return;
   if (!window.confirm("Удалить этот чат?")) return;
 
   const response = await fetch(`/api/chats/${encodeURIComponent(chatId)}`, {
     method: "DELETE"
   });
+
+  if (response.status === 401) {
+    showAuth();
+    return;
+  }
 
   if (!response.ok) {
     throw new Error(`Delete chat failed: ${response.status}`);
@@ -309,7 +424,7 @@ async function deleteChat(chatId) {
     } else {
       setActiveChat(null);
       renderMessages([]);
-      setStatus("РіРѕС‚РѕРІ");
+      setStatus("готов");
     }
     return;
   }
@@ -319,6 +434,11 @@ async function deleteChat(chatId) {
 
 async function sendChatMessage(event) {
   event.preventDefault();
+
+  if (!currentUser) {
+    showAuth();
+    return;
+  }
 
   const content = chatInput.value.trim();
   const model = getSelectedModel();
@@ -354,6 +474,11 @@ async function sendChatMessage(event) {
     });
 
     if (!response.ok) {
+      if (response.status === 401) {
+        showAuth();
+        return;
+      }
+
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || `Request failed: ${response.status}`);
     }
@@ -397,6 +522,11 @@ newChatButton.addEventListener("click", () => {
 });
 
 clearChatButton.addEventListener("click", () => {
+  if (!currentUser) {
+    showAuth();
+    return;
+  }
+
   if (!activeChatId) {
     renderMessages([]);
     return;
@@ -404,10 +534,16 @@ clearChatButton.addEventListener("click", () => {
 
   fetch(`/api/chats/${encodeURIComponent(activeChatId)}/messages`, { method: "DELETE" })
     .then((response) => {
+      if (response.status === 401) {
+        showAuth();
+        return null;
+      }
+
       if (!response.ok) throw new Error(`Clear failed: ${response.status}`);
       return response.json();
     })
     .then((payload) => {
+      if (!payload) return;
       upsertChat(payload.chat);
       setActiveChat(payload.chat);
       renderMessages([]);
@@ -421,9 +557,20 @@ clearChatButton.addEventListener("click", () => {
 
 themeToggle.addEventListener("click", toggleTheme);
 chatForm.addEventListener("submit", sendChatMessage);
+authForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  authenticate("login").catch(() => showAuth("Не удалось войти."));
+});
+registerButton.addEventListener("click", () => {
+  authenticate("register").catch(() => showAuth("Не удалось зарегистрироваться."));
+});
+logoutButton.addEventListener("click", () => {
+  logout().catch(() => showAuth("Не удалось выйти."));
+});
 
 applyTheme(getSavedTheme());
-loadChats().catch(() => {
+checkAuth().catch(() => {
   renderMessages([]);
   setStatus("ошибка", "error");
+  showAuth();
 });

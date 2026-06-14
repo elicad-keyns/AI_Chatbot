@@ -502,6 +502,23 @@ textarea:focus {
   background: var(--panel-strong);
 }
 
+.user-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  max-width: 160px;
+  overflow: hidden;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--label);
+  background: var(--panel-strong);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-layout {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
@@ -733,6 +750,44 @@ textarea:focus {
   min-height: 48px;
   max-height: 180px;
   resize: none;
+}
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 20, 27, 0.5);
+}
+
+.auth-overlay.hidden {
+  display: none;
+}
+
+.auth-dialog {
+  display: grid;
+  gap: 14px;
+  width: min(420px, 100%);
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.auth-dialog label {
+  display: grid;
+  gap: 7px;
+}
+
+.auth-error {
+  min-height: 20px;
+  margin: 0;
+  color: var(--red);
+  font-size: 0.84rem;
+  font-weight: 700;
 }
 
 @media (max-width: 1040px) {

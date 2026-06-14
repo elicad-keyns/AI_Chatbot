@@ -14,6 +14,8 @@
           <h1>AI Chat Agent</h1>
         </div>
         <nav class="chat-nav" aria-label="Navigation">
+          <span class="user-badge hidden" id="userBadge"></span>
+          <button class="ghost-button compact hidden" id="logoutButton" type="button">Выйти</button>
           <a class="ghost-link" href="/">Parameter Lab</a>
           <button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" title="Переключить тему">
             <span id="themeIcon">☾</span>
@@ -80,6 +82,28 @@
         </section>
       </section>
     </main>
+
+    <div class="auth-overlay hidden" id="authOverlay" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <form class="auth-dialog" id="authForm">
+        <div>
+          <p class="eyebrow">Account</p>
+          <h2 id="authTitle">Вход в чат</h2>
+        </div>
+        <label for="authLogin">
+          <span>Логин</span>
+          <input id="authLogin" name="login" type="text" autocomplete="username" required>
+        </label>
+        <label for="authPassword">
+          <span>Пароль</span>
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p class="auth-error" id="authError"></p>
+        <div class="button-row">
+          <button class="primary-button" id="loginButton" type="submit">Войти</button>
+          <button class="ghost-button" id="registerButton" type="button">Регистрация</button>
+        </div>
+      </form>
+    </div>
 
     <script src="/chat.js"></script>
   </body>

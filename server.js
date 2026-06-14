@@ -1,13 +1,19 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const ChatAgent = require("./agent");
+const UserStore = require("./userStore");
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const MAX_BODY_BYTES = 1024 * 1024;
 const chatAgent = new ChatAgent();
+const userStore = new UserStore();
+const sessions = new Map();
+const SESSION_COOKIE = "chat_session";
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -26,6 +32,10 @@ function sendJson(res, statusCode, payload) {
   res.end(JSON.stringify(payload));
 }
 
+function sendAuthRequired(res) {
+  sendJson(res, 401, { error: "Authentication required." });
+}
+
 function sendSse(res, eventName, payload) {
   res.write(`event: ${eventName}\n`);
   res.write(`data: ${JSON.stringify(payload)}\n\n`);
@@ -33,6 +43,63 @@ function sendSse(res, eventName, payload) {
 
 function getUrl(req) {
   return new URL(req.url, `http://${req.headers.host || "localhost"}`);
+}
+
+function parseCookies(req) {
+  return String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const separatorIndex = part.indexOf("=");
+      if (separatorIndex === -1) return cookies;
+      const name = decodeURIComponent(part.slice(0, separatorIndex));
+      const value = decodeURIComponent(part.slice(separatorIndex + 1));
+      cookies[name] = value;
+      return cookies;
+    }, {});
+}
+
+function setSessionCookie(res, token) {
+  res.setHeader(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}`
+  );
+}
+
+function clearSessionCookie(res) {
+  res.setHeader(
+    "Set-Cookie",
+    `${SESSION_COOKIE}=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0`
+  );
+}
+
+function getAuthenticatedUser(req) {
+  const token = parseCookies(req)[SESSION_COOKIE];
+  if (!token) return null;
+
+  const session = sessions.get(token);
+  if (!session || session.expiresAt < Date.now()) {
+    sessions.delete(token);
+    return null;
+  }
+
+  const user = userStore.getUserById(session.userId);
+  if (!user) {
+    sessions.delete(token);
+    return null;
+  }
+
+  return user;
+}
+
+function createSession(res, user) {
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, {
+    userId: user.id,
+    expiresAt: Date.now() + (SESSION_MAX_AGE_SECONDS * 1000)
+  });
+  setSessionCookie(res, token);
 }
 
 function readRequestBody(req) {
@@ -118,6 +185,12 @@ async function handleChatStream(req, res) {
   let abortController;
 
   try {
+    const user = getAuthenticatedUser(req);
+    if (!user) {
+      sendAuthRequired(res);
+      return;
+    }
+
     const rawBody = await readRequestBody(req);
     const payload = JSON.parse(rawBody || "{}");
     const apiKey = String(payload.apiKey || process.env.OPENAI_API_KEY || "").trim();
@@ -155,6 +228,7 @@ async function handleChatStream(req, res) {
 
     await chatAgent.streamResponse({
       apiKey,
+      userId: user.id,
       chatId,
       message,
       model,
@@ -217,13 +291,19 @@ async function handleChatStream(req, res) {
 }
 
 async function handleChats(req, res) {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    sendAuthRequired(res);
+    return;
+  }
+
   const url = getUrl(req);
   const parts = url.pathname.split("/").filter(Boolean);
   const chatId = parts[2] || "";
 
   if (parts.length === 2 && req.method === "GET") {
     sendJson(res, 200, {
-      chats: chatAgent.listChats()
+      chats: chatAgent.listChats(user.id)
     });
     return;
   }
@@ -231,7 +311,7 @@ async function handleChats(req, res) {
   if (parts.length === 2 && req.method === "POST") {
     const rawBody = await readRequestBody(req);
     const payload = JSON.parse(rawBody || "{}");
-    const chat = chatAgent.createChat({
+    const chat = chatAgent.createChat(user.id, {
       title: payload.title
     });
 
@@ -240,7 +320,7 @@ async function handleChats(req, res) {
   }
 
   if (parts.length === 3 && req.method === "GET") {
-    const chat = chatAgent.getChat(chatId);
+    const chat = chatAgent.getChat(user.id, chatId);
     if (!chat) {
       sendJson(res, 404, { error: "Chat not found." });
       return;
@@ -251,20 +331,20 @@ async function handleChats(req, res) {
   }
 
   if (parts.length === 3 && req.method === "DELETE") {
-    const deleted = chatAgent.deleteChat(chatId);
+    const deleted = chatAgent.deleteChat(user.id, chatId);
     if (!deleted) {
       sendJson(res, 404, { error: "Chat not found." });
       return;
     }
 
     sendJson(res, 200, {
-      chats: chatAgent.listChats()
+      chats: chatAgent.listChats(user.id)
     });
     return;
   }
 
   if (parts.length === 4 && parts[3] === "messages" && req.method === "DELETE") {
-    const chat = chatAgent.clearHistory(chatId);
+    const chat = chatAgent.clearHistory(user.id, chatId);
     if (!chat) {
       sendJson(res, 404, { error: "Chat not found." });
       return;
@@ -278,11 +358,17 @@ async function handleChats(req, res) {
 }
 
 function handleChatHistory(req, res) {
-  const firstChat = chatAgent.listChats()[0] || null;
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    sendAuthRequired(res);
+    return;
+  }
+
+  const firstChat = chatAgent.listChats(user.id)[0] || null;
 
   if (req.method === "GET") {
     sendJson(res, 200, {
-      messages: firstChat ? chatAgent.getHistory(firstChat.id) : []
+      messages: firstChat ? chatAgent.getHistory(user.id, firstChat.id) : []
     });
     return;
   }
@@ -294,8 +380,48 @@ function handleChatHistory(req, res) {
     }
 
     sendJson(res, 200, {
-      messages: chatAgent.clearHistory(firstChat.id)?.messages || []
+      messages: chatAgent.clearHistory(user.id, firstChat.id)?.messages || []
     });
+    return;
+  }
+
+  sendJson(res, 405, { error: "Method not allowed." });
+}
+
+async function handleAuth(req, res) {
+  const url = getUrl(req);
+  const pathName = url.pathname;
+
+  if (pathName === "/api/auth/me" && req.method === "GET") {
+    const user = getAuthenticatedUser(req);
+    sendJson(res, 200, { user });
+    return;
+  }
+
+  if (pathName === "/api/auth/logout" && req.method === "POST") {
+    const token = parseCookies(req)[SESSION_COOKIE];
+    if (token) sessions.delete(token);
+    clearSessionCookie(res);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if ((pathName === "/api/auth/login" || pathName === "/api/auth/register") && req.method === "POST") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const login = payload.login;
+    const password = payload.password;
+    const user = pathName === "/api/auth/register"
+      ? userStore.createUser(login, password)
+      : userStore.verifyUser(login, password);
+
+    if (!user) {
+      sendJson(res, 401, { error: "Invalid login or password." });
+      return;
+    }
+
+    createSession(res, user);
+    sendJson(res, pathName === "/api/auth/register" ? 201 : 200, { user });
     return;
   }
 
@@ -330,6 +456,14 @@ const server = http.createServer((req, res) => {
 
   if (req.method === "POST" && url.pathname === "/api/openai") {
     handleOpenAiProxy(req, res);
+    return;
+  }
+
+  if (url.pathname.startsWith("/api/auth/")) {
+    handleAuth(req, res).catch((error) => {
+      const statusCode = error.message.includes("exists") ? 409 : 400;
+      sendJson(res, statusCode, { error: error.message });
+    });
     return;
   }
 
