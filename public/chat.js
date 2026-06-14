@@ -79,9 +79,10 @@ function formatMessageTokenSummary(stats) {
   const requestTokens = Number(stats.requestTokens || 0);
   const responseTokens = Number(stats.responseTokens || 0);
   const totalTokens = Number(stats.totalTokens || requestTokens + responseTokens);
+  const estimatedCostUsd = Number(stats.estimatedCostUsd || 0);
 
   if (!requestTokens && !responseTokens && !totalTokens) return "";
-  return `Запрос ${formatNumber(requestTokens)} | Ответ ${formatNumber(responseTokens)} | Всего ${formatNumber(totalTokens)}`;
+  return `Запрос ${formatNumber(requestTokens)} | Ответ ${formatNumber(responseTokens)} | Всего ${formatNumber(totalTokens)} | ${formatUsd(estimatedCostUsd)}`;
 }
 
 function updateAssistantTokenBadge(textElement, stats) {
