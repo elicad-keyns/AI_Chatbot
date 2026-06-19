@@ -119,10 +119,10 @@ function updateTokenMetrics(stats) {
   if (!tokenStats.contextLimit) {
     tokenWarning.textContent = "";
   } else if (tokenStats.overLimit) {
-    tokenWarning.textContent = `Контекст переполнен: ${formatNumber(tokenStats.requestTokens)} из ${formatNumber(tokenStats.contextLimit)} токенов.`;
+    tokenWarning.textContent = `Context overflow: ${formatNumber(tokenStats.requestTokens)} of ${formatNumber(tokenStats.contextLimit)} tokens.`;
   } else {
     const layers = tokenStats.layers || {};
-    tokenWarning.textContent = `В запрос попадёт short-term: ${formatNumber(layers.short_term?.includedMessageCount)} сообщений, working: ${formatNumber(layers.working?.itemCount)} записей, long-term: ${formatNumber(layers.long_term?.itemCount)} записей.`;
+    tokenWarning.textContent = `Request includes short-term: ${formatNumber(layers.short_term?.includedMessageCount)} recent messages + ${formatNumber(layers.short_term?.compressedMessageCount)} compressed, working: ${formatNumber(layers.working?.itemCount)} records, long-term: ${formatNumber(layers.long_term?.itemCount)} records.`;
   }
 }
 
@@ -149,7 +149,7 @@ async function authenticate(mode) {
   const password = authPassword.value;
 
   if (!login || !password) {
-    showAuth("Введите логин и пароль.");
+    showAuth("Enter login and password.");
     return;
   }
 
@@ -163,7 +163,7 @@ async function authenticate(mode) {
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    showAuth(payload.error || "Не удалось войти.");
+    showAuth(payload.error || "Sign in failed.");
     return;
   }
 
@@ -236,7 +236,7 @@ function renderMessages(nextMessages) {
   });
 
   if (!messages.length) {
-    addMessage("assistant", "Привет. Это отдельный агент с явными слоями памяти. Создайте чат, напишите задачу и смотрите справа, что попало в short-term, working и long-term.");
+    addMessage("assistant", "Hi. This is a separate agent with explicit memory layers. Create a chat, describe a task, and inspect what lands in short-term, working, and long-term memory.");
   }
 }
 
@@ -246,7 +246,7 @@ function renderChatList() {
   if (!chats.length) {
     const empty = document.createElement("p");
     empty.className = "chat-list-empty";
-    empty.textContent = currentUser ? "Memory-чаты пока пустые." : "Войдите, чтобы увидеть свои memory-чаты.";
+    empty.textContent = currentUser ? "No memory chats yet." : "Sign in to see your memory chats.";
     chatList.append(empty);
     return;
   }
@@ -273,9 +273,9 @@ function renderChatList() {
     const deleteButton = document.createElement("button");
     deleteButton.className = "icon-button delete-chat-button";
     deleteButton.type = "button";
-    deleteButton.title = "Удалить чат";
-    deleteButton.setAttribute("aria-label", "Удалить чат");
-    deleteButton.textContent = "×";
+    deleteButton.title = "Delete chat";
+    deleteButton.setAttribute("aria-label", "Delete chat");
+    deleteButton.textContent = "x";
     deleteButton.addEventListener("click", () => deleteChat(chat.id));
 
     row.append(button, deleteButton);
@@ -285,7 +285,7 @@ function renderChatList() {
 
 function setActiveChat(chat) {
   activeChatId = chat?.id || null;
-  activeChatTitle.textContent = chat?.title || "Новый memory chat";
+  activeChatTitle.textContent = chat?.title || "New memory chat";
   applyChatSettings(chat);
   renderChatList();
 }
@@ -306,9 +306,9 @@ function upsertChat(chat) {
 }
 
 function renderDebug(memory, debug) {
-  memoryPreview.textContent = memory ? pretty(memory) : "Память появится здесь после выбора или создания чата.";
-  requestPreview.textContent = debug?.lastRequest ? pretty(debug.lastRequest) : "Request debug появится после первого сообщения.";
-  responsePreview.textContent = debug?.lastResponse ? pretty(debug.lastResponse) : "Response debug появится после ответа модели.";
+  memoryPreview.textContent = memory ? pretty(memory) : "Memory appears here after you create or select a chat.";
+  requestPreview.textContent = debug?.lastRequest ? pretty(debug.lastRequest) : "Request debug appears after the first message.";
+  responsePreview.textContent = debug?.lastResponse ? pretty(debug.lastResponse) : "Response debug appears after the model replies.";
 }
 
 function renderChatDebug(chat) {
@@ -327,14 +327,14 @@ function formatMemoryRecord(record, index) {
   const category = record?.category ? `[${record.category}] ` : "";
   const key = record?.key ? `${record.key}: ` : "";
   const value = String(record?.value || "").trim();
-  const source = record?.source ? `\n  источник: ${record.source}` : "";
-  const reason = record?.reason ? `\n  почему сохранено: ${record.reason}` : "";
-  return `${index + 1}. ${category}${key}${value || "(пусто)"}${source}${reason}`;
+  const source = record?.source ? `\n  source: ${record.source}` : "";
+  const reason = record?.reason ? `\n  saved because: ${record.reason}` : "";
+  return `${index + 1}. ${category}${key}${value || "(empty)"}${source}${reason}`;
 }
 
 function formatMemoryItems(items) {
   const records = Object.values(items || {});
-  if (!records.length) return "- пока пусто";
+  if (!records.length) return "- empty";
   return records.map(formatMemoryRecord).join("\n\n");
 }
 
@@ -343,32 +343,38 @@ function formatShortTermMemory(memory) {
   const notes = Array.isArray(memory?.notes) ? memory.notes : [];
   const recentMessages = messages.length
     ? messages.slice(-10).map((message, index) => {
-      const role = message.role === "assistant" ? "Ассистент" : "Пользователь";
+      const role = message.role === "assistant" ? "Assistant" : "User";
       return `${index + 1}. ${role}: ${message.content}`;
     }).join("\n")
-    : "- сообщений пока нет";
+    : "- no messages yet";
   const noteText = notes.length
     ? notes.map(formatMemoryRecord).join("\n\n")
-    : "- временных заметок нет";
+    : "- no temporary notes";
+  const compressedSummary = memory?.summary?.text
+    ? `${memory.summary.text}\n\nCompressed messages: ${memory.summary.messageCount || 0}`
+    : "- no compressed summary";
 
   return [
-    "КРАТКОСРОЧНАЯ ПАМЯТЬ",
-    "Scope: только текущий чат.",
-    "Сюда попадает текущий диалог и временные заметки, которые не должны жить между чатами.",
+    "SHORT-TERM MEMORY",
+    "Scope: current chat only.",
+    "This layer is sent as compressed older dialogue plus the latest window of messages.",
     "",
-    "Последние сообщения:",
+    "Compressed summary:",
+    compressedSummary,
+    "",
+    "Recent messages:",
     recentMessages,
     "",
-    "Временные заметки:",
+    "Temporary notes:",
     noteText
   ].join("\n");
 }
 
 function formatWorkingMemory(memory) {
   return [
-    "РАБОЧАЯ ПАМЯТЬ",
-    "Scope: текущая задача пользователя, общая между memory-чатами.",
-    "Сюда попадают цель, ограничения, решения, открытые вопросы и состояние задачи.",
+    "WORKING MEMORY",
+    "Scope: active user task, shared across memory chats.",
+    "Stores task goals, constraints, decisions, open questions, and current state.",
     "",
     formatMemoryItems(memory?.items)
   ].join("\n");
@@ -376,9 +382,9 @@ function formatWorkingMemory(memory) {
 
 function formatLongTermMemory(memory) {
   return [
-    "ДОЛГОВРЕМЕННАЯ ПАМЯТЬ",
-    "Scope: профиль и знания пользователя, общие между всеми memory-чатами.",
-    "Сюда попадают имя, роль, предпочтения, устойчивые решения и знания.",
+    "LONG-TERM MEMORY",
+    "Scope: durable user profile and reusable knowledge, shared across all memory chats.",
+    "Stores name, role, preferences, stable decisions, and user-specific knowledge.",
     "",
     formatMemoryItems(memory?.items)
   ].join("\n");
@@ -386,7 +392,7 @@ function formatLongTermMemory(memory) {
 
 function buildHumanMemoryText(chat) {
   if (!chat) {
-    return "Выберите или создайте memory-чат, чтобы посмотреть слои памяти.";
+    return "Select or create a memory chat to inspect memory layers.";
   }
 
   return [
@@ -627,7 +633,7 @@ async function sendChatMessage(event) {
   const content = chatInput.value.trim();
   const model = getSelectedModel();
   if (!content || !model) {
-    setStatus("ошибка", "error");
+    setStatus("error", "error");
     return;
   }
 
@@ -640,7 +646,7 @@ async function sendChatMessage(event) {
   messages.push({ role: "assistant", content: "" });
   sendMessageButton.disabled = true;
   chatInput.disabled = true;
-  setStatus("стрим", "loading");
+  setStatus("streaming", "loading");
 
   try {
     const response = await fetch("/api/chat_memory", {
@@ -668,11 +674,11 @@ async function sendChatMessage(event) {
 
     const assistantContent = await readChatStream(response, assistantText);
     messages[messages.length - 1].content = assistantContent;
-    setStatus("готов");
+    setStatus("ready");
     await refreshDebug();
   } catch (error) {
     assistantText.textContent = error.message;
-    setStatus("ошибка", "error");
+    setStatus("error", "error");
   } finally {
     sendMessageButton.disabled = false;
     chatInput.disabled = false;
@@ -692,7 +698,7 @@ async function saveManualMemory() {
 
   const value = memoryValue.value.trim();
   if (!value) {
-    setStatus("нет значения", "error");
+    setStatus("no value", "error");
     return;
   }
 
@@ -706,7 +712,7 @@ async function saveManualMemory() {
       category: memoryCategory.value,
       key: memoryKey.value,
       value,
-      reason: "Saved manually from /chat_memory debug tool."
+      reason: "Saved manually from /memory_chat debug tool."
     })
   });
 
@@ -715,7 +721,7 @@ async function saveManualMemory() {
     return;
   }
   if (!response.ok) {
-    setStatus("ошибка", "error");
+    setStatus("error", "error");
     return;
   }
 
@@ -724,7 +730,7 @@ async function saveManualMemory() {
   upsertChat(payload.chat);
   setActiveChat(payload.chat);
   renderChatDebug(payload.chat);
-  setStatus("сохранено");
+  setStatus("saved");
   scheduleTokenPreview();
 }
 
@@ -743,7 +749,7 @@ async function refreshDebug() {
 }
 
 async function deleteChat(chatId) {
-  if (!chatId || !window.confirm("Удалить этот memory-чат?")) return;
+  if (!chatId || !window.confirm("Delete this memory chat?")) return;
 
   const response = await fetch(`/api/chat_memory/chats/${encodeURIComponent(chatId)}`, {
     method: "DELETE"
@@ -754,7 +760,7 @@ async function deleteChat(chatId) {
     return;
   }
   if (!response.ok) {
-    setStatus("ошибка", "error");
+    setStatus("error", "error");
     return;
   }
 
@@ -796,7 +802,7 @@ async function clearChat() {
     return;
   }
   if (!response.ok) {
-    setStatus("ошибка", "error");
+    setStatus("error", "error");
     return;
   }
 
@@ -805,7 +811,7 @@ async function clearChat() {
   setActiveChat(payload.chat);
   renderMessages(payload.chat.messages);
   renderChatDebug(payload.chat);
-  setStatus("готов");
+  setStatus("ready");
 }
 
 function updateMemoryDefaults() {
@@ -840,9 +846,9 @@ chatModel.addEventListener("change", () => {
   scheduleTokenPreview();
 });
 customModel.addEventListener("input", scheduleTokenPreview);
-shortTermWindow.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("ошибка", "error")));
-includeWorkingMemory.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("ошибка", "error")));
-includeLongTermMemory.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("ошибка", "error")));
+shortTermWindow.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("error", "error")));
+includeWorkingMemory.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("error", "error")));
+includeLongTermMemory.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("error", "error")));
 memoryLayer.addEventListener("change", updateMemoryDefaults);
 showMemoryTextButton.addEventListener("click", showHumanMemory);
 closeMemoryTextButton.addEventListener("click", hideHumanMemory);
@@ -851,27 +857,27 @@ memoryTextOverlay.addEventListener("click", (event) => {
     hideHumanMemory();
   }
 });
-saveMemoryButton.addEventListener("click", () => saveManualMemory().catch(() => setStatus("ошибка", "error")));
-refreshDebugButton.addEventListener("click", () => refreshDebug().catch(() => setStatus("ошибка", "error")));
-newChatButton.addEventListener("click", () => createNewChat().catch(() => setStatus("ошибка", "error")));
-clearChatButton.addEventListener("click", () => clearChat().catch(() => setStatus("ошибка", "error")));
+saveMemoryButton.addEventListener("click", () => saveManualMemory().catch(() => setStatus("error", "error")));
+refreshDebugButton.addEventListener("click", () => refreshDebug().catch(() => setStatus("error", "error")));
+newChatButton.addEventListener("click", () => createNewChat().catch(() => setStatus("error", "error")));
+clearChatButton.addEventListener("click", () => clearChat().catch(() => setStatus("error", "error")));
 themeToggle.addEventListener("click", toggleTheme);
 chatForm.addEventListener("submit", sendChatMessage);
 authForm.addEventListener("submit", (event) => {
   event.preventDefault();
-  authenticate("login").catch(() => showAuth("Не удалось войти."));
+  authenticate("login").catch(() => showAuth("Sign in failed."));
 });
 registerButton.addEventListener("click", () => {
-  authenticate("register").catch(() => showAuth("Не удалось зарегистрироваться."));
+  authenticate("register").catch(() => showAuth("Registration failed."));
 });
 logoutButton.addEventListener("click", () => {
-  logout().catch(() => showAuth("Не удалось выйти."));
+  logout().catch(() => showAuth("Logout failed."));
 });
 
 applyTheme(getSavedTheme());
 renderDebug(null, null);
 checkAuth().catch(() => {
   renderMessages([]);
-  setStatus("ошибка", "error");
+  setStatus("error", "error");
   showAuth();
 });

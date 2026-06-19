@@ -8,6 +8,7 @@ const DEFAULT_WORKING_FILE = dataPath("memory-working.json");
 const DEFAULT_LONG_TERM_FILE = dataPath("memory-long-term.json");
 const MAX_MESSAGES_PER_CHAT = 120;
 const MAX_DEBUG_EVENTS = 30;
+const MAX_SHORT_TERM_SUMMARY_CHARS = 2600;
 const DEFAULT_CHAT_SETTINGS = {
   shortTermWindow: 10,
   includeWorkingMemory: true,
@@ -54,6 +55,7 @@ class MemoryLayerStore {
       updatedAt: options.updatedAt || now,
       settings: this.sanitizeSettings(options.settings),
       messages: [],
+      summary: null,
       notes: [],
       debugEvents: [],
       lastRequest: null,
@@ -102,6 +104,7 @@ class MemoryLayerStore {
       ...chat.settings,
       ...settings
     });
+    this.refreshShortTermSummary(chat);
     chat.updatedAt = new Date().toISOString();
     this.sortShortTermChats();
     this.saveShortTerm();
@@ -117,6 +120,7 @@ class MemoryLayerStore {
 
     chat.messages.push(cleanMessage);
     chat.messages = chat.messages.slice(-MAX_MESSAGES_PER_CHAT);
+    this.refreshShortTermSummary(chat);
     chat.updatedAt = new Date().toISOString();
 
     if (chat.title === "Memory chat" && cleanMessage.role === "user") {
@@ -209,6 +213,7 @@ class MemoryLayerStore {
     if (!chat) return null;
 
     chat.messages = [];
+    chat.summary = null;
     chat.notes = [];
     chat.lastRequest = null;
     chat.lastResponse = null;
@@ -310,6 +315,7 @@ class MemoryLayerStore {
       settings: this.sanitizeSettings(chat.settings),
       memoryCounts: {
         shortTermMessages: chat.messages.length,
+        shortTermCompressedMessages: chat.summary?.messageCount || 0,
         shortTermNotes: chat.notes.length,
         workingItems: Object.keys(working?.items || {}).length,
         longTermItems: Object.keys(longTerm?.items || {}).length
@@ -322,6 +328,7 @@ class MemoryLayerStore {
       chatId: chat.id,
       userId: chat.userId,
       description: "Current dialogue layer: recent messages and temporary notes for this chat only.",
+      summary: this.clone(chat.summary || null),
       messages: chat.messages.map((message) => ({ ...message })),
       notes: chat.notes.map((note) => ({ ...note })),
       updatedAt: chat.updatedAt
@@ -393,6 +400,7 @@ class MemoryLayerStore {
           updatedAt: this.cleanDate(chat?.updatedAt) || now,
           settings: this.sanitizeSettings(chat?.settings),
           messages: this.sanitizeMessages(chat?.messages),
+          summary: this.sanitizeShortTermSummary(chat?.summary),
           notes: this.sanitizeMemoryRecords(chat?.notes),
           debugEvents: Array.isArray(chat?.debugEvents) ? chat.debugEvents.slice(0, MAX_DEBUG_EVENTS) : [],
           lastRequest: this.clone(chat?.lastRequest || null),
@@ -456,6 +464,69 @@ class MemoryLayerStore {
       .slice(-MAX_MESSAGES_PER_CHAT);
   }
 
+  refreshShortTermSummary(chat) {
+    const window = this.sanitizeSettings(chat?.settings).shortTermWindow;
+    const overflowMessages = chat.messages.slice(0, Math.max(0, chat.messages.length - window));
+
+    if (!overflowMessages.length) {
+      chat.summary = null;
+      return;
+    }
+
+    chat.summary = {
+      messageCount: overflowMessages.length,
+      window,
+      text: this.compressMessages(overflowMessages),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  compressMessages(messages) {
+    const userLines = [];
+    const assistantLines = [];
+    const stickyLines = [];
+    const decisionLines = [];
+
+    messages.forEach((message) => {
+      const content = this.cleanValue(message.content, 500);
+      if (!content) return;
+
+      const lower = content.toLowerCase();
+      const line = `${message.role === "assistant" ? "Assistant" : "User"}: ${content}`;
+
+      if (message.role === "user") userLines.push(line);
+      if (message.role === "assistant") assistantLines.push(line);
+      if (this.looksLikeStableFact(lower)) stickyLines.push(line);
+      if (this.looksLikeTaskDecision(lower)) decisionLines.push(line);
+    });
+
+    const sections = [
+      this.summarySection("Older user requests", userLines.slice(-8)),
+      this.summarySection("Older assistant outcomes", assistantLines.slice(-6)),
+      this.summarySection("Potential stable facts", stickyLines.slice(-6)),
+      this.summarySection("Potential task decisions", decisionLines.slice(-6))
+    ].filter(Boolean);
+
+    const summary = sections.join("\n");
+    return this.cleanValue(summary || "Older dialogue contained no compactable facts.", MAX_SHORT_TERM_SUMMARY_CHARS);
+  }
+
+  summarySection(title, lines) {
+    if (!lines.length) return "";
+    return [
+      `${title}:`,
+      ...lines.map((line) => `- ${line}`)
+    ].join("\n");
+  }
+
+  looksLikeStableFact(lowerText) {
+    return /remember|my name is|i prefer|always answer|profile|i am|i work|меня зовут|запомни|предпочитаю|всегда отвечай|мой профиль|я работаю|я пишу/i.test(lowerText);
+  }
+
+  looksLikeTaskDecision(lowerText) {
+    return /task|goal|need|build|implement|feature|decision|decided|constraint|current|задач|цель|нужно|надо|сделай|реализ|фич|решили|решение|выбрали|ограничени|текущ/i.test(lowerText);
+  }
+
   sanitizeMessage(message) {
     const role = message?.role === "assistant" ? "assistant" : "user";
     const content = this.cleanValue(message?.content, 12000);
@@ -479,6 +550,19 @@ class MemoryLayerStore {
   sanitizeMemoryRecords(records) {
     if (!Array.isArray(records)) return [];
     return records.map((record) => this.sanitizeMemoryRecord(record)).filter(Boolean);
+  }
+
+  sanitizeShortTermSummary(summary) {
+    if (!summary || typeof summary !== "object" || Array.isArray(summary)) return null;
+    const text = this.cleanValue(summary.text, MAX_SHORT_TERM_SUMMARY_CHARS);
+    if (!text) return null;
+
+    return {
+      messageCount: Number.isFinite(Number(summary.messageCount)) ? Math.max(0, Math.round(Number(summary.messageCount))) : 0,
+      window: Number.isFinite(Number(summary.window)) ? Math.max(2, Math.round(Number(summary.window))) : DEFAULT_CHAT_SETTINGS.shortTermWindow,
+      text,
+      updatedAt: this.cleanDate(summary.updatedAt) || new Date().toISOString()
+    };
   }
 
   sanitizeMemoryRecord(record, fallbackKey = "") {

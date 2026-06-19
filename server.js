@@ -912,7 +912,7 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === "GET") {
-    if (url.pathname === "/chat_memory" || url.pathname === "/chat_memory/") {
+    if (url.pathname === "/memory_chat" || url.pathname === "/memory_chat/" || url.pathname === "/chat_memory" || url.pathname === "/chat_memory/") {
       req.url = "/chat_memory.html";
     }
 

@@ -282,7 +282,9 @@ class MemoryAgent {
 
   buildLayeredContext({ chat, userMessage, settings }) {
     const messages = Array.isArray(chat?.messages) ? chat.messages : [];
-    const recentMessages = messages
+    const historyMessages = this.withoutCurrentUserMessage(messages, userMessage);
+    const shortTermSummary = chat?.shortTermMemory?.summary?.text || "";
+    const recentMessages = historyMessages
       .slice(-settings.shortTermWindow)
       .map((message) => `${message.role === "assistant" ? "Assistant" : "User"}: ${message.content}`)
       .join("\n");
@@ -293,6 +295,9 @@ class MemoryAgent {
     const shortTermBlock = [
       "Layer: short_term",
       "Purpose: current dialogue only.",
+      shortTermSummary
+        ? `Compressed summary of older dialogue:\n${shortTermSummary}`
+        : "Compressed summary of older dialogue: empty",
       recentMessages ? `Recent messages:\n${recentMessages}` : "Recent messages: empty",
       shortTermNotes ? `Temporary notes:\n${shortTermNotes}` : "Temporary notes: empty"
     ].join("\n");
@@ -330,8 +335,9 @@ class MemoryAgent {
       blocks,
       layerStats: {
         short_term: {
-          messageCount: messages.length,
-          includedMessageCount: Math.min(messages.length, settings.shortTermWindow),
+          messageCount: historyMessages.length,
+          compressedMessageCount: chat?.shortTermMemory?.summary?.messageCount || 0,
+          includedMessageCount: Math.min(historyMessages.length, settings.shortTermWindow),
           noteCount: chat?.shortTermMemory?.notes?.length || 0
         },
         working: {
@@ -357,12 +363,22 @@ class MemoryAgent {
     };
   }
 
+  withoutCurrentUserMessage(messages, userMessage) {
+    if (!messages.length) return messages;
+    const lastMessage = messages[messages.length - 1];
+    const currentText = String(userMessage || "").trim();
+    if (lastMessage?.role === "user" && String(lastMessage.content || "").trim() === currentText) {
+      return messages.slice(0, -1);
+    }
+    return messages;
+  }
+
   routeMemoryWrites(userMessage) {
     const text = String(userMessage || "").trim();
     const lower = text.toLowerCase();
     const writes = [];
 
-    if (/(цель|задач|нужно|надо|сделай|реализ|план|ограничени|текущ)/i.test(lower)) {
+    if (/(goal|task|need|build|make|create|implement|feature|constraint|current|цель|задач|нужно|надо|сделай|создай|реализ|фич|ограничени|текущ)/i.test(lower)) {
       writes.push({
         layer: "working",
         category: "task",
@@ -373,7 +389,7 @@ class MemoryAgent {
       });
     }
 
-    if (/(решили|решение|договорились|выбрали|архитектур)/i.test(lower)) {
+    if (/(decided|decision|agreed|selected|architecture|решили|решение|договорились|выбрали|архитектур)/i.test(lower)) {
       writes.push({
         layer: "working",
         category: "decision",
@@ -384,7 +400,7 @@ class MemoryAgent {
       });
     }
 
-    if (/(запомни|я предпочитаю|предпочитаю|меня зовут|мой профиль|всегда отвечай|люблю|не люблю)/i.test(lower)) {
+    if (/(remember|my name is|i prefer|prefer|my profile|always answer|i like|i dislike|запомни|я предпочитаю|предпочитаю|меня зовут|мой профиль|всегда отвечай|люблю|не люблю)/i.test(lower)) {
       writes.push({
         layer: "long_term",
         category: "profile",
@@ -413,9 +429,9 @@ class MemoryAgent {
   }
 
   inferLongTermKey(lowerText) {
-    if (lowerText.includes("меня зовут")) return "user_name";
-    if (lowerText.includes("предпочитаю")) return "preference";
-    if (lowerText.includes("всегда отвечай")) return "response_style";
+    if (lowerText.includes("my name is") || lowerText.includes("меня зовут")) return "user_name";
+    if (lowerText.includes("prefer") || lowerText.includes("предпочитаю")) return "preference";
+    if (lowerText.includes("always answer") || lowerText.includes("всегда отвечай")) return "response_style";
     return "profile_note";
   }
 

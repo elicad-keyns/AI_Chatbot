@@ -15,10 +15,10 @@
         </div>
         <nav class="chat-nav" aria-label="Navigation">
           <span class="user-badge hidden" id="userBadge"></span>
-          <button class="ghost-button compact hidden" id="logoutButton" type="button">Выйти</button>
+          <button class="ghost-button compact hidden" id="logoutButton" type="button">Logout</button>
           <a class="ghost-link" href="/chat">Classic Chat</a>
           <a class="ghost-link" href="/">Parameter Lab</a>
-          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" title="Переключить тему">
+          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle theme" title="Toggle theme">
             <span id="themeIcon">☾</span>
           </button>
         </nav>
@@ -30,9 +30,9 @@
             <div class="section-head">
               <div>
                 <p class="eyebrow">Saved chats</p>
-                <h2>Чаты памяти</h2>
+                <h2>Memory chats</h2>
               </div>
-              <button class="ghost-button compact" id="newChat" type="button">Новый</button>
+              <button class="ghost-button compact" id="newChat" type="button">New</button>
             </div>
             <div class="chat-list" id="chatList"></div>
           </section>
@@ -40,10 +40,10 @@
           <section class="memory-save-tool" aria-label="Manual memory save">
             <div>
               <p class="eyebrow">Explicit save</p>
-              <h2>Записать в память</h2>
+              <h2>Save to memory</h2>
             </div>
             <label for="memoryLayer">
-              <span>Слой</span>
+              <span>Layer</span>
               <select id="memoryLayer">
                 <option value="short_term">short_term</option>
                 <option value="working">working</option>
@@ -51,32 +51,32 @@
               </select>
             </label>
             <label for="memoryCategory">
-              <span>Категория</span>
+              <span>Category</span>
               <input id="memoryCategory" type="text" value="task" spellcheck="false">
             </label>
             <label for="memoryKey">
-              <span>Ключ</span>
+              <span>Key</span>
               <input id="memoryKey" type="text" value="current_task" spellcheck="false">
             </label>
             <label for="memoryValue">
-              <span>Значение</span>
-              <textarea id="memoryValue" rows="3" placeholder="Что сохранить в выбранный слой"></textarea>
+              <span>Value</span>
+              <textarea id="memoryValue" rows="3" placeholder="What to save into the selected layer"></textarea>
             </label>
-            <button class="ghost-button compact" id="saveMemory" type="button">Сохранить явно</button>
+            <button class="ghost-button compact" id="saveMemory" type="button">Save explicitly</button>
           </section>
         </aside>
 
         <section class="chat-window memory-chat-window" aria-label="Memory chat">
           <div class="chat-status-row">
             <div class="chat-title-block">
-              <strong class="active-chat-title" id="activeChatTitle">Новый memory chat</strong>
-              <span class="field-note">Short-term хранит диалог, working хранит задачу, long-term хранит профиль и устойчивые знания.</span>
+              <strong class="active-chat-title" id="activeChatTitle">New memory chat</strong>
+              <span class="field-note">Short-term keeps this chat as summary plus recent messages. Working keeps the current task across memory chats. Long-term keeps sticky facts.</span>
             </div>
 
             <div class="chat-toolbar" aria-label="Memory settings">
               <div class="toolbar-row">
                 <label class="toolbar-field" for="chatModel">
-                  <span>Модель</span>
+                  <span>Model</span>
                   <select id="chatModel">
                     <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                     <option value="gpt-4.1">gpt-4.1</option>
@@ -95,7 +95,7 @@
                 </label>
 
                 <label class="toolbar-field compact-number-field" for="shortTermWindow">
-                  <span>Окно</span>
+                  <span>Window</span>
                   <input id="shortTermWindow" type="number" min="2" max="40" step="1" value="10">
                 </label>
 
@@ -111,15 +111,15 @@
 
                 <label class="toolbar-field api-key-field" for="chatApiKey">
                   <span>API key</span>
-                  <input id="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY или sk-...">
+                  <input id="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY or sk-...">
                 </label>
               </div>
 
               <div class="toolbar-row">
-                <button class="ghost-button compact" id="showMemoryText" type="button">Память</button>
+                <button class="ghost-button compact" id="showMemoryText" type="button">Memory</button>
                 <button class="ghost-button compact" id="refreshDebug" type="button">Debug</button>
-                <button class="ghost-button compact" id="clearChat" type="button">Очистить</button>
-                <span class="status-pill" id="chatStatus">готов</span>
+                <button class="ghost-button compact" id="clearChat" type="button">Clear</button>
+                <span class="status-pill" id="chatStatus">ready</span>
               </div>
             </div>
           </div>
@@ -154,8 +154,8 @@
 
           <div class="message-list" id="messageList" aria-live="polite"></div>
           <form class="chat-composer" id="chatForm">
-            <textarea id="chatInput" rows="2" placeholder="Напишите сообщение memory-агенту..." required></textarea>
-            <button class="primary-button" id="sendMessage" type="submit">Отправить</button>
+            <textarea id="chatInput" rows="2" placeholder="Write a message to the memory agent..." required></textarea>
+            <button class="primary-button" id="sendMessage" type="submit">Send</button>
           </form>
         </section>
 
@@ -164,7 +164,7 @@
             <div class="section-head">
               <div>
                 <p class="eyebrow">Memory layers</p>
-                <h2>Слои памяти</h2>
+                <h2>Memory layers</h2>
               </div>
             </div>
             <pre class="summary-text memory-pre" id="memoryPreview"></pre>
@@ -174,7 +174,7 @@
             <div class="section-head">
               <div>
                 <p class="eyebrow">Request</p>
-                <h2>Что ушло в модель</h2>
+                <h2>Sent to model</h2>
               </div>
             </div>
             <pre class="summary-text memory-pre" id="requestPreview"></pre>
@@ -184,7 +184,7 @@
             <div class="section-head">
               <div>
                 <p class="eyebrow">Response</p>
-                <h2>Что вернулось</h2>
+                <h2>Model response</h2>
               </div>
             </div>
             <pre class="summary-text memory-pre" id="responsePreview"></pre>
@@ -197,20 +197,20 @@
       <form class="auth-dialog" id="authForm">
         <div>
           <p class="eyebrow">Account</p>
-          <h2 id="authTitle">Вход в memory chat</h2>
+          <h2 id="authTitle">Sign in to memory chat</h2>
         </div>
         <label for="authLogin">
-          <span>Логин</span>
+          <span>Login</span>
           <input id="authLogin" name="login" type="text" autocomplete="username" required>
         </label>
         <label for="authPassword">
-          <span>Пароль</span>
+          <span>Password</span>
           <input id="authPassword" name="password" type="password" autocomplete="current-password" required>
         </label>
         <p class="auth-error" id="authError"></p>
         <div class="button-row">
-          <button class="primary-button" id="loginButton" type="submit">Войти</button>
-          <button class="ghost-button" id="registerButton" type="button">Регистрация</button>
+          <button class="primary-button" id="loginButton" type="submit">Sign in</button>
+          <button class="ghost-button" id="registerButton" type="button">Register</button>
         </div>
       </form>
     </div>
@@ -220,9 +220,9 @@
         <header class="summary-dialog-head">
           <div>
             <p class="eyebrow">Memory layers</p>
-            <h2 id="memoryTextTitle">Память ассистента</h2>
+            <h2 id="memoryTextTitle">Assistant memory</h2>
           </div>
-          <button class="icon-button" id="closeMemoryText" type="button" aria-label="Закрыть">×</button>
+          <button class="icon-button" id="closeMemoryText" type="button" aria-label="Close">x</button>
         </header>
         <pre class="summary-text memory-human-text" id="memoryTextContent"></pre>
       </section>
