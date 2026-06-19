@@ -4,6 +4,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const ChatAgent = require("./agent");
 const MemoryAgent = require("./memoryAgent");
+const SessionStore = require("./sessionStore");
 const UserStore = require("./userStore");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -13,7 +14,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const chatAgent = new ChatAgent();
 const memoryAgent = new MemoryAgent();
 const userStore = new UserStore();
-const sessions = new Map();
+const sessions = new SessionStore();
 const SESSION_COOKIE = "chat_session";
 const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 

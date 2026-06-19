@@ -1,11 +1,11 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { dataPath } = require("./storagePaths");
 
-const DATA_DIR = path.join(__dirname, "data");
-const DEFAULT_SHORT_TERM_FILE = path.join(DATA_DIR, "memory-short-term.json");
-const DEFAULT_WORKING_FILE = path.join(DATA_DIR, "memory-working.json");
-const DEFAULT_LONG_TERM_FILE = path.join(DATA_DIR, "memory-long-term.json");
+const DEFAULT_SHORT_TERM_FILE = dataPath("memory-short-term.json");
+const DEFAULT_WORKING_FILE = dataPath("memory-working.json");
+const DEFAULT_LONG_TERM_FILE = dataPath("memory-long-term.json");
 const MAX_MESSAGES_PER_CHAT = 120;
 const MAX_DEBUG_EVENTS = 30;
 const DEFAULT_CHAT_SETTINGS = {

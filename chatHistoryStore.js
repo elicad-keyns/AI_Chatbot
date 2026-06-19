@@ -1,8 +1,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { dataPath } = require("./storagePaths");
 
-const DEFAULT_HISTORY_FILE = path.join(__dirname, "data", "chat-history.json");
+const DEFAULT_HISTORY_FILE = dataPath("chat-history.json");
 const VALID_ROLES = new Set(["user", "assistant"]);
 const MAX_MESSAGES_PER_CHAT = 80;
 const LEGACY_USER_ID = "legacy";

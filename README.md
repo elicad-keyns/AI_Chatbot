@@ -12,6 +12,8 @@ It uses a new `MemoryAgent` instead of the classic `/chat` agent and stores memo
 
 The UI supports registration/login, multiple saved memory chats, manual explicit memory writes, automatic memory routing logs, and debug panels showing the memory snapshot, request parameters sent to `/api/chat_memory`, the OpenAI request body, and response metadata.
 
+For Railway deploys, attach a persistent Volume and either mount it so Railway exposes `RAILWAY_VOLUME_MOUNT_PATH`, or set `DATA_DIR` to the mounted path. Without a Volume, JSON files live inside the container filesystem and can disappear after restarts, redeploys, or instance changes.
+
 Простой сайт для экспериментов с параметрами OpenAI API. Слева находятся настройки модели, API-ключа и параметров запроса, справа отображаются JSON запроса и JSON ответа. Ответ можно переключить в текстовый вид.
 
 ## Почему JavaScript и Node.js

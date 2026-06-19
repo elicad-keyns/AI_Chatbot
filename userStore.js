@@ -1,8 +1,9 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { dataPath } = require("./storagePaths");
 
-const DEFAULT_USERS_FILE = path.join(__dirname, "data", "users.json");
+const DEFAULT_USERS_FILE = dataPath("users.json");
 const PASSWORD_ITERATIONS = 120000;
 const PASSWORD_KEY_LENGTH = 32;
 const PASSWORD_DIGEST = "sha256";
