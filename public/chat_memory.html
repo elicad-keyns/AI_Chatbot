@@ -116,6 +116,7 @@
               </div>
 
               <div class="toolbar-row">
+                <button class="ghost-button compact" id="showMemoryText" type="button">Память</button>
                 <button class="ghost-button compact" id="refreshDebug" type="button">Debug</button>
                 <button class="ghost-button compact" id="clearChat" type="button">Очистить</button>
                 <span class="status-pill" id="chatStatus">готов</span>
@@ -212,6 +213,19 @@
           <button class="ghost-button" id="registerButton" type="button">Регистрация</button>
         </div>
       </form>
+    </div>
+
+    <div class="summary-overlay hidden" id="memoryTextOverlay" role="dialog" aria-modal="true" aria-labelledby="memoryTextTitle">
+      <section class="summary-dialog memory-text-dialog">
+        <header class="summary-dialog-head">
+          <div>
+            <p class="eyebrow">Memory layers</p>
+            <h2 id="memoryTextTitle">Память ассистента</h2>
+          </div>
+          <button class="icon-button" id="closeMemoryText" type="button" aria-label="Закрыть">×</button>
+        </header>
+        <pre class="summary-text memory-human-text" id="memoryTextContent"></pre>
+      </section>
     </div>
 
     <script src="/chat_memory.js"></script>

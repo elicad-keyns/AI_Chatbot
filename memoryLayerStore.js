@@ -20,17 +20,20 @@ class MemoryLayerStore {
     this.workingFilePath = options.workingFilePath || process.env.MEMORY_WORKING_FILE || DEFAULT_WORKING_FILE;
     this.longTermFilePath = options.longTermFilePath || process.env.MEMORY_LONG_TERM_FILE || DEFAULT_LONG_TERM_FILE;
     this.shortTerm = { chats: [] };
-    this.working = { chats: [] };
+    this.working = { users: [] };
     this.longTerm = { users: [] };
     this.load();
   }
 
   load() {
     this.shortTerm = this.readPayload(this.shortTermFilePath, { chats: [] });
-    this.working = this.readPayload(this.workingFilePath, { chats: [] });
+    this.working = this.readPayload(this.workingFilePath, { users: [] });
     this.longTerm = this.readPayload(this.longTermFilePath, { users: [] });
     this.shortTerm.chats = this.sanitizeShortTermChats(this.shortTerm.chats);
-    this.working.chats = this.sanitizeWorkingChats(this.working.chats);
+    const workingUsers = Array.isArray(this.working.users) && this.working.users.length
+      ? this.working.users
+      : this.migrateWorkingChats(this.working.chats);
+    this.working.users = this.sanitizeWorkingUsers(workingUsers);
     this.longTerm.users = this.sanitizeLongTermUsers(this.longTerm.users);
   }
 
@@ -58,7 +61,7 @@ class MemoryLayerStore {
     };
 
     this.shortTerm.chats.unshift(chat);
-    this.ensureWorkingMemory(userId, chat.id);
+    this.ensureWorkingMemory(userId);
     this.ensureLongTermMemory(userId);
     this.saveShortTerm();
     this.saveWorking();
@@ -69,7 +72,7 @@ class MemoryLayerStore {
   ensureChat(userId, chatId, options = {}) {
     const existing = chatId ? this.findShortTermChat(userId, chatId) : null;
     if (existing) {
-      this.ensureWorkingMemory(userId, existing.id);
+      this.ensureWorkingMemory(userId);
       this.ensureLongTermMemory(userId);
       return this.getChat(userId, existing.id);
     }
@@ -85,7 +88,7 @@ class MemoryLayerStore {
       ...this.toChatSummary(chat),
       messages: chat.messages.map((message) => ({ ...message })),
       shortTermMemory: this.toShortTermMemory(chat),
-      workingMemory: this.clone(this.ensureWorkingMemory(userId, chat.id)),
+      workingMemory: this.clone(this.ensureWorkingMemory(userId)),
       longTermMemory: this.clone(this.ensureLongTermMemory(userId)),
       debug: this.getDebug(userId, chat.id)
     };
@@ -182,7 +185,7 @@ class MemoryLayerStore {
     }
 
     if (cleanLayer === "working") {
-      const memory = this.ensureWorkingMemory(userId, chatId);
+      const memory = this.ensureWorkingMemory(userId);
       if (!memory) return null;
       memory.items[record.key] = record;
       memory.updatedAt = now;
@@ -218,12 +221,9 @@ class MemoryLayerStore {
   deleteChat(userId, chatId) {
     const initialLength = this.shortTerm.chats.length;
     this.shortTerm.chats = this.shortTerm.chats.filter((chat) => chat.userId !== userId || chat.id !== chatId);
-    this.working.chats = this.working.chats.filter((memory) => memory.userId !== userId || memory.chatId !== chatId);
-
     if (this.shortTerm.chats.length === initialLength) return false;
 
     this.saveShortTerm();
-    this.saveWorking();
     return true;
   }
 
@@ -263,23 +263,22 @@ class MemoryLayerStore {
 
     return {
       short_term: this.toShortTermMemory(chat),
-      working: this.clone(this.ensureWorkingMemory(userId, chatId)),
+      working: this.clone(this.ensureWorkingMemory(userId)),
       long_term: this.clone(this.ensureLongTermMemory(userId))
     };
   }
 
-  ensureWorkingMemory(userId, chatId) {
-    if (!chatId) return null;
-    let memory = this.working.chats.find((item) => item.userId === userId && item.chatId === chatId);
+  ensureWorkingMemory(userId) {
+    let memory = this.working.users.find((item) => item.userId === userId);
     if (memory) return memory;
 
     memory = {
       userId,
-      chatId,
+      scope: "current_task",
       items: {},
       updatedAt: null
     };
-    this.working.chats.push(memory);
+    this.working.users.push(memory);
     return memory;
   }
 
@@ -298,7 +297,7 @@ class MemoryLayerStore {
 
   toChatSummary(chat) {
     const lastMessage = chat.messages[chat.messages.length - 1] || null;
-    const working = this.ensureWorkingMemory(chat.userId, chat.id);
+    const working = this.ensureWorkingMemory(chat.userId);
     const longTerm = this.ensureLongTermMemory(chat.userId);
 
     return {
@@ -349,7 +348,7 @@ class MemoryLayerStore {
   saveWorking() {
     this.writePayload(this.workingFilePath, {
       updatedAt: new Date().toISOString(),
-      chats: this.working.chats
+      users: this.working.users
     });
   }
 
@@ -404,16 +403,38 @@ class MemoryLayerStore {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
   }
 
-  sanitizeWorkingChats(chats) {
+  migrateWorkingChats(chats) {
     if (!Array.isArray(chats)) return [];
-    return chats
+    const users = new Map();
+    chats.forEach((memory) => {
+      const userId = String(memory?.userId || "").trim();
+      if (!userId) return;
+      const existing = users.get(userId) || {
+        userId,
+        scope: "current_task",
+        items: {},
+        updatedAt: null
+      };
+      existing.items = {
+        ...existing.items,
+        ...this.sanitizeMemoryItems(memory?.items)
+      };
+      existing.updatedAt = this.latestDate(existing.updatedAt, memory?.updatedAt);
+      users.set(userId, existing);
+    });
+    return Array.from(users.values());
+  }
+
+  sanitizeWorkingUsers(users) {
+    if (!Array.isArray(users)) return [];
+    return users
       .map((memory) => ({
         userId: String(memory?.userId || "").trim(),
-        chatId: String(memory?.chatId || "").trim(),
+        scope: this.cleanKey(memory?.scope) || "current_task",
         items: this.sanitizeMemoryItems(memory?.items),
         updatedAt: this.cleanDate(memory?.updatedAt) || null
       }))
-      .filter((memory) => memory.userId && memory.chatId);
+      .filter((memory) => memory.userId);
   }
 
   sanitizeLongTermUsers(users) {
@@ -530,6 +551,14 @@ class MemoryLayerStore {
     if (!value) return "";
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+  }
+
+  latestDate(left, right) {
+    const cleanLeft = this.cleanDate(left);
+    const cleanRight = this.cleanDate(right);
+    if (!cleanLeft) return cleanRight || null;
+    if (!cleanRight) return cleanLeft;
+    return cleanRight.localeCompare(cleanLeft) > 0 ? cleanRight : cleanLeft;
   }
 
   clone(value) {

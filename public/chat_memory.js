@@ -40,6 +40,10 @@ const memoryCategory = document.querySelector("#memoryCategory");
 const memoryKey = document.querySelector("#memoryKey");
 const memoryValue = document.querySelector("#memoryValue");
 const saveMemoryButton = document.querySelector("#saveMemory");
+const showMemoryTextButton = document.querySelector("#showMemoryText");
+const memoryTextOverlay = document.querySelector("#memoryTextOverlay");
+const closeMemoryTextButton = document.querySelector("#closeMemoryText");
+const memoryTextContent = document.querySelector("#memoryTextContent");
 
 let chats = [];
 let activeChatId = null;
@@ -317,6 +321,95 @@ function renderChatDebug(chat) {
     working: chat.workingMemory,
     long_term: chat.longTermMemory
   }, chat.debug);
+}
+
+function formatMemoryRecord(record, index) {
+  const category = record?.category ? `[${record.category}] ` : "";
+  const key = record?.key ? `${record.key}: ` : "";
+  const value = String(record?.value || "").trim();
+  const source = record?.source ? `\n  источник: ${record.source}` : "";
+  const reason = record?.reason ? `\n  почему сохранено: ${record.reason}` : "";
+  return `${index + 1}. ${category}${key}${value || "(пусто)"}${source}${reason}`;
+}
+
+function formatMemoryItems(items) {
+  const records = Object.values(items || {});
+  if (!records.length) return "- пока пусто";
+  return records.map(formatMemoryRecord).join("\n\n");
+}
+
+function formatShortTermMemory(memory) {
+  const messages = Array.isArray(memory?.messages) ? memory.messages : [];
+  const notes = Array.isArray(memory?.notes) ? memory.notes : [];
+  const recentMessages = messages.length
+    ? messages.slice(-10).map((message, index) => {
+      const role = message.role === "assistant" ? "Ассистент" : "Пользователь";
+      return `${index + 1}. ${role}: ${message.content}`;
+    }).join("\n")
+    : "- сообщений пока нет";
+  const noteText = notes.length
+    ? notes.map(formatMemoryRecord).join("\n\n")
+    : "- временных заметок нет";
+
+  return [
+    "КРАТКОСРОЧНАЯ ПАМЯТЬ",
+    "Scope: только текущий чат.",
+    "Сюда попадает текущий диалог и временные заметки, которые не должны жить между чатами.",
+    "",
+    "Последние сообщения:",
+    recentMessages,
+    "",
+    "Временные заметки:",
+    noteText
+  ].join("\n");
+}
+
+function formatWorkingMemory(memory) {
+  return [
+    "РАБОЧАЯ ПАМЯТЬ",
+    "Scope: текущая задача пользователя, общая между memory-чатами.",
+    "Сюда попадают цель, ограничения, решения, открытые вопросы и состояние задачи.",
+    "",
+    formatMemoryItems(memory?.items)
+  ].join("\n");
+}
+
+function formatLongTermMemory(memory) {
+  return [
+    "ДОЛГОВРЕМЕННАЯ ПАМЯТЬ",
+    "Scope: профиль и знания пользователя, общие между всеми memory-чатами.",
+    "Сюда попадают имя, роль, предпочтения, устойчивые решения и знания.",
+    "",
+    formatMemoryItems(memory?.items)
+  ].join("\n");
+}
+
+function buildHumanMemoryText(chat) {
+  if (!chat) {
+    return "Выберите или создайте memory-чат, чтобы посмотреть слои памяти.";
+  }
+
+  return [
+    formatShortTermMemory(chat.shortTermMemory),
+    "",
+    "----------------------------------------",
+    "",
+    formatWorkingMemory(chat.workingMemory),
+    "",
+    "----------------------------------------",
+    "",
+    formatLongTermMemory(chat.longTermMemory)
+  ].join("\n");
+}
+
+function showHumanMemory() {
+  const chat = getActiveChat();
+  memoryTextContent.textContent = buildHumanMemoryText(chat);
+  memoryTextOverlay.classList.remove("hidden");
+}
+
+function hideHumanMemory() {
+  memoryTextOverlay.classList.add("hidden");
 }
 
 async function loadChats(preferredChatId = activeChatId) {
@@ -751,6 +844,13 @@ shortTermWindow.addEventListener("change", () => saveActiveChatSettings().catch(
 includeWorkingMemory.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("ошибка", "error")));
 includeLongTermMemory.addEventListener("change", () => saveActiveChatSettings().catch(() => setStatus("ошибка", "error")));
 memoryLayer.addEventListener("change", updateMemoryDefaults);
+showMemoryTextButton.addEventListener("click", showHumanMemory);
+closeMemoryTextButton.addEventListener("click", hideHumanMemory);
+memoryTextOverlay.addEventListener("click", (event) => {
+  if (event.target === memoryTextOverlay) {
+    hideHumanMemory();
+  }
+});
 saveMemoryButton.addEventListener("click", () => saveManualMemory().catch(() => setStatus("ошибка", "error")));
 refreshDebugButton.addEventListener("click", () => refreshDebug().catch(() => setStatus("ошибка", "error")));
 newChatButton.addEventListener("click", () => createNewChat().catch(() => setStatus("ошибка", "error")));
