@@ -1,5 +1,17 @@
 # OpenAI API Parameter Lab
 
+## Day 11: Memory Layer Agent
+
+Open `http://localhost:3000/chat_memory` to use the separate memory assistant.
+
+It uses a new `MemoryAgent` instead of the classic `/chat` agent and stores memory in three separate files:
+
+- `data/memory-short-term.json` - current dialogue messages and temporary notes per chat.
+- `data/memory-working.json` - active task data, constraints, decisions, and next steps per chat.
+- `data/memory-long-term.json` - durable user profile, preferences, decisions, and reusable knowledge per user.
+
+The UI supports registration/login, multiple saved memory chats, manual explicit memory writes, automatic memory routing logs, and debug panels showing the memory snapshot, request parameters sent to `/api/chat_memory`, the OpenAI request body, and response metadata.
+
 Простой сайт для экспериментов с параметрами OpenAI API. Слева находятся настройки модели, API-ключа и параметров запроса, справа отображаются JSON запроса и JSON ответа. Ответ можно переключить в текстовый вид.
 
 ## Почему JavaScript и Node.js

@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const ChatAgent = require("./agent");
+const MemoryAgent = require("./memoryAgent");
 const UserStore = require("./userStore");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -10,6 +11,7 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const MAX_BODY_BYTES = 1024 * 1024;
 const chatAgent = new ChatAgent();
+const memoryAgent = new MemoryAgent();
 const userStore = new UserStore();
 const sessions = new Map();
 const SESSION_COOKIE = "chat_session";
@@ -480,6 +482,273 @@ async function handleChats(req, res) {
   sendJson(res, 405, { error: "Method not allowed." });
 }
 
+async function handleMemoryChatStream(req, res) {
+  let abortController;
+
+  try {
+    const user = getAuthenticatedUser(req);
+    if (!user) {
+      sendAuthRequired(res);
+      return;
+    }
+
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const apiKey = String(payload.apiKey || process.env.OPENAI_API_KEY || "").trim();
+    const chatId = String(payload.chatId || "").trim();
+    const message = String(payload.message || "").trim();
+    const model = String(payload.model || "").trim();
+    const shortTermWindow = Number(payload.shortTermWindow || 0) || undefined;
+    const includeWorkingMemory = typeof payload.includeWorkingMemory === "boolean"
+      ? payload.includeWorkingMemory
+      : undefined;
+    const includeLongTermMemory = typeof payload.includeLongTermMemory === "boolean"
+      ? payload.includeLongTermMemory
+      : undefined;
+    const manualMemoryWrites = Array.isArray(payload.manualMemoryWrites)
+      ? payload.manualMemoryWrites
+      : [];
+
+    if (!apiKey) {
+      sendJson(res, 400, {
+        error: "API key is required. Set OPENAI_API_KEY or enter a key in memory chat settings."
+      });
+      return;
+    }
+
+    if (!message) {
+      sendJson(res, 400, { error: "Message is required." });
+      return;
+    }
+
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+
+    abortController = new AbortController();
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        abortController.abort();
+      }
+    });
+
+    await memoryAgent.streamResponse({
+      apiKey,
+      userId: user.id,
+      chatId,
+      message,
+      model,
+      shortTermWindow,
+      includeWorkingMemory,
+      includeLongTermMemory,
+      manualMemoryWrites,
+      signal: abortController.signal,
+      onReady: (chat) => {
+        if (!res.writableEnded) {
+          sendSse(res, "chat", { chat });
+        }
+      },
+      onText: (delta) => {
+        if (!res.writableEnded) {
+          sendSse(res, "delta", { delta });
+        }
+      },
+      onComplete: ({ response, chat, tokenStats, memoryWrites, debug }) => {
+        if (!res.writableEnded) {
+          sendSse(res, "meta", {
+            id: response?.id || null,
+            model: response?.model || model || null,
+            usage: response?.usage || null,
+            tokenStats,
+            memoryWrites,
+            debug,
+            chat
+          });
+        }
+      }
+    });
+
+    if (!res.writableEnded) {
+      sendSse(res, "done", {});
+      res.end();
+    }
+  } catch (error) {
+    if (error.name === "AbortError") return;
+
+    if (res.headersSent) {
+      if (!res.writableEnded) {
+        sendSse(res, "error", { error: error.message });
+        res.end();
+      }
+      return;
+    }
+
+    sendJson(res, error.message.includes("large") ? 413 : 500, {
+      error: error.message
+    });
+  }
+}
+
+async function handleMemoryChatTokenPreview(req, res) {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    sendAuthRequired(res);
+    return;
+  }
+
+  if (req.method !== "POST") {
+    sendJson(res, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  const rawBody = await readRequestBody(req);
+  const payload = JSON.parse(rawBody || "{}");
+  const tokenStats = memoryAgent.getTokenSummary({
+    userId: user.id,
+    chatId: String(payload.chatId || "").trim(),
+    message: String(payload.message || ""),
+    model: String(payload.model || ""),
+    shortTermWindow: Number(payload.shortTermWindow || 0) || undefined,
+    includeWorkingMemory: typeof payload.includeWorkingMemory === "boolean"
+      ? payload.includeWorkingMemory
+      : undefined,
+    includeLongTermMemory: typeof payload.includeLongTermMemory === "boolean"
+      ? payload.includeLongTermMemory
+      : undefined
+  });
+
+  sendJson(res, 200, { tokenStats });
+}
+
+async function handleMemoryChats(req, res) {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    sendAuthRequired(res);
+    return;
+  }
+
+  const url = getUrl(req);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const chatId = parts[3] || "";
+
+  if (parts.length === 3 && req.method === "GET") {
+    sendJson(res, 200, {
+      chats: memoryAgent.listChats(user.id)
+    });
+    return;
+  }
+
+  if (parts.length === 3 && req.method === "POST") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const chat = memoryAgent.createChat(user.id, {
+      title: payload.title,
+      settings: {
+        shortTermWindow: payload.shortTermWindow,
+        includeWorkingMemory: payload.includeWorkingMemory,
+        includeLongTermMemory: payload.includeLongTermMemory
+      }
+    });
+
+    sendJson(res, 201, { chat });
+    return;
+  }
+
+  if (parts.length === 4 && req.method === "GET") {
+    const chat = memoryAgent.getChat(user.id, chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Memory chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  if (parts.length === 4 && req.method === "PATCH") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const nextSettings = {};
+    if (payload.shortTermWindow !== undefined) nextSettings.shortTermWindow = payload.shortTermWindow;
+    if (typeof payload.includeWorkingMemory === "boolean") nextSettings.includeWorkingMemory = payload.includeWorkingMemory;
+    if (typeof payload.includeLongTermMemory === "boolean") nextSettings.includeLongTermMemory = payload.includeLongTermMemory;
+
+    const chat = memoryAgent.updateChatSettings(user.id, chatId, nextSettings);
+    if (!chat) {
+      sendJson(res, 404, { error: "Memory chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  if (parts.length === 5 && parts[4] === "memory" && req.method === "POST") {
+    const rawBody = await readRequestBody(req);
+    const payload = JSON.parse(rawBody || "{}");
+    const result = memoryAgent.saveManualMemory({
+      userId: user.id,
+      chatId,
+      layer: payload.layer,
+      category: payload.category,
+      key: payload.key,
+      value: payload.value,
+      reason: payload.reason
+    });
+
+    if (!result.chat) {
+      sendJson(res, 404, { error: "Memory chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, result);
+    return;
+  }
+
+  if (parts.length === 5 && parts[4] === "debug" && req.method === "GET") {
+    const chat = memoryAgent.getChat(user.id, chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Memory chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, {
+      memory: memoryAgent.getMemorySnapshot(user.id, chatId),
+      debug: memoryAgent.getDebug(user.id, chatId)
+    });
+    return;
+  }
+
+  if (parts.length === 4 && req.method === "DELETE") {
+    const deleted = memoryAgent.deleteChat(user.id, chatId);
+    if (!deleted) {
+      sendJson(res, 404, { error: "Memory chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, {
+      chats: memoryAgent.listChats(user.id)
+    });
+    return;
+  }
+
+  if (parts.length === 5 && parts[4] === "messages" && req.method === "DELETE") {
+    const chat = memoryAgent.clearHistory(user.id, chatId);
+    if (!chat) {
+      sendJson(res, 404, { error: "Memory chat not found." });
+      return;
+    }
+
+    sendJson(res, 200, { chat });
+    return;
+  }
+
+  sendJson(res, 405, { error: "Method not allowed." });
+}
+
 function handleChatHistory(req, res) {
   const user = getAuthenticatedUser(req);
   if (!user) {
@@ -599,6 +868,29 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (url.pathname === "/api/chat_memory/tokens") {
+    handleMemoryChatTokenPreview(req, res).catch((error) => {
+      sendJson(res, error.message.includes("large") ? 413 : 500, {
+        error: error.message
+      });
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/chat_memory") {
+    handleMemoryChatStream(req, res);
+    return;
+  }
+
+  if (url.pathname === "/api/chat_memory/chats" || url.pathname.startsWith("/api/chat_memory/chats/")) {
+    handleMemoryChats(req, res).catch((error) => {
+      sendJson(res, error.message.includes("large") ? 413 : 500, {
+        error: error.message
+      });
+    });
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/chat") {
     handleChatStream(req, res);
     return;
@@ -619,6 +911,10 @@ const server = http.createServer((req, res) => {
   }
 
   if (req.method === "GET") {
+    if (url.pathname === "/chat_memory" || url.pathname === "/chat_memory/") {
+      req.url = "/chat_memory.html";
+    }
+
     if (url.pathname === "/chat" || url.pathname === "/chat/") {
       req.url = "/chat.html";
     }

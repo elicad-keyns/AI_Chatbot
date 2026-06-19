@@ -531,6 +531,15 @@ textarea:focus {
   overflow: hidden;
 }
 
+.memory-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr) minmax(320px, 420px);
+  gap: 18px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .chat-settings,
 .chat-window {
   border: 1px solid var(--line);
@@ -552,6 +561,13 @@ textarea:focus {
   display: grid;
   gap: 10px;
   min-height: 0;
+}
+
+.memory-save-tool {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 
 .chat-list {
@@ -744,6 +760,10 @@ textarea:focus {
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
+}
+
+.memory-token-panel {
+  grid-template-columns: repeat(6, minmax(82px, 1fr));
 }
 
 .token-card {
@@ -970,6 +990,31 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.memory-debug-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.memory-layer-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.memory-pre {
+  min-height: 0;
+  font-size: 0.76rem;
+}
+
 .auth-dialog {
   display: grid;
   gap: 14px;
@@ -1019,6 +1064,16 @@ textarea:focus {
     grid-template-rows: auto minmax(0, 1fr);
   }
 
+  .memory-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(560px, 1fr) minmax(520px, 0.9fr);
+    overflow-y: auto;
+  }
+
+  .memory-debug-panel {
+    min-height: 520px;
+  }
+
   .chat-window {
     min-height: 0;
   }
@@ -1041,6 +1096,10 @@ textarea:focus {
   }
 
   .token-panel {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .memory-token-panel {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -1108,6 +1167,10 @@ textarea:focus {
   .token-panel {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     padding: 8px 10px;
+  }
+
+  .memory-token-panel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .chat-message {

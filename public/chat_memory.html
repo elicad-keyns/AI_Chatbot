@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Memory Layer Agent</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body class="chat-page memory-page">
+    <main class="chat-shell memory-shell">
+      <header class="chat-topbar">
+        <div>
+          <p class="eyebrow">Day 11</p>
+          <h1>Memory Layer Agent</h1>
+        </div>
+        <nav class="chat-nav" aria-label="Navigation">
+          <span class="user-badge hidden" id="userBadge"></span>
+          <button class="ghost-button compact hidden" id="logoutButton" type="button">Выйти</button>
+          <a class="ghost-link" href="/chat">Classic Chat</a>
+          <a class="ghost-link" href="/">Parameter Lab</a>
+          <button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему" title="Переключить тему">
+            <span id="themeIcon">☾</span>
+          </button>
+        </nav>
+      </header>
+
+      <section class="memory-layout">
+        <aside class="chat-settings" aria-label="Memory chats">
+          <section class="chat-history-panel">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Saved chats</p>
+                <h2>Чаты памяти</h2>
+              </div>
+              <button class="ghost-button compact" id="newChat" type="button">Новый</button>
+            </div>
+            <div class="chat-list" id="chatList"></div>
+          </section>
+
+          <section class="memory-save-tool" aria-label="Manual memory save">
+            <div>
+              <p class="eyebrow">Explicit save</p>
+              <h2>Записать в память</h2>
+            </div>
+            <label for="memoryLayer">
+              <span>Слой</span>
+              <select id="memoryLayer">
+                <option value="short_term">short_term</option>
+                <option value="working">working</option>
+                <option value="long_term">long_term</option>
+              </select>
+            </label>
+            <label for="memoryCategory">
+              <span>Категория</span>
+              <input id="memoryCategory" type="text" value="task" spellcheck="false">
+            </label>
+            <label for="memoryKey">
+              <span>Ключ</span>
+              <input id="memoryKey" type="text" value="current_task" spellcheck="false">
+            </label>
+            <label for="memoryValue">
+              <span>Значение</span>
+              <textarea id="memoryValue" rows="3" placeholder="Что сохранить в выбранный слой"></textarea>
+            </label>
+            <button class="ghost-button compact" id="saveMemory" type="button">Сохранить явно</button>
+          </section>
+        </aside>
+
+        <section class="chat-window memory-chat-window" aria-label="Memory chat">
+          <div class="chat-status-row">
+            <div class="chat-title-block">
+              <strong class="active-chat-title" id="activeChatTitle">Новый memory chat</strong>
+              <span class="field-note">Short-term хранит диалог, working хранит задачу, long-term хранит профиль и устойчивые знания.</span>
+            </div>
+
+            <div class="chat-toolbar" aria-label="Memory settings">
+              <div class="toolbar-row">
+                <label class="toolbar-field" for="chatModel">
+                  <span>Модель</span>
+                  <select id="chatModel">
+                    <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+                    <option value="gpt-4.1">gpt-4.1</option>
+                    <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-5-mini">gpt-5-mini</option>
+                    <option value="gpt-5">gpt-5</option>
+                    <option value="custom">custom</option>
+                  </select>
+                </label>
+
+                <label id="customModelWrap" class="toolbar-field hidden" for="customModel">
+                  <span>Custom</span>
+                  <input id="customModel" type="text" placeholder="model-id" spellcheck="false">
+                </label>
+
+                <label class="toolbar-field compact-number-field" for="shortTermWindow">
+                  <span>Окно</span>
+                  <input id="shortTermWindow" type="number" min="2" max="40" step="1" value="10">
+                </label>
+
+                <label class="toolbar-switch" for="includeWorkingMemory">
+                  <input id="includeWorkingMemory" type="checkbox" checked>
+                  <span>working</span>
+                </label>
+
+                <label class="toolbar-switch" for="includeLongTermMemory">
+                  <input id="includeLongTermMemory" type="checkbox" checked>
+                  <span>long-term</span>
+                </label>
+
+                <label class="toolbar-field api-key-field" for="chatApiKey">
+                  <span>API key</span>
+                  <input id="chatApiKey" type="password" autocomplete="off" placeholder="OPENAI_API_KEY или sk-...">
+                </label>
+              </div>
+
+              <div class="toolbar-row">
+                <button class="ghost-button compact" id="refreshDebug" type="button">Debug</button>
+                <button class="ghost-button compact" id="clearChat" type="button">Очистить</button>
+                <span class="status-pill" id="chatStatus">готов</span>
+              </div>
+            </div>
+          </div>
+
+          <section class="token-panel memory-token-panel" aria-label="Memory token usage">
+            <div class="token-card">
+              <span>Current</span>
+              <strong id="metricCurrentTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Short</span>
+              <strong id="metricShortTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Working</span>
+              <strong id="metricWorkingTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Long</span>
+              <strong id="metricLongTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Request</span>
+              <strong id="metricRequestTokens">0</strong>
+            </div>
+            <div class="token-card">
+              <span>Limit</span>
+              <strong id="metricTokenLimit">0</strong>
+            </div>
+            <p class="token-warning" id="tokenWarning"></p>
+          </section>
+
+          <div class="message-list" id="messageList" aria-live="polite"></div>
+          <form class="chat-composer" id="chatForm">
+            <textarea id="chatInput" rows="2" placeholder="Напишите сообщение memory-агенту..." required></textarea>
+            <button class="primary-button" id="sendMessage" type="submit">Отправить</button>
+          </form>
+        </section>
+
+        <aside class="memory-debug-panel" aria-label="Memory debugger">
+          <section class="memory-layer-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Memory layers</p>
+                <h2>Слои памяти</h2>
+              </div>
+            </div>
+            <pre class="summary-text memory-pre" id="memoryPreview"></pre>
+          </section>
+
+          <section class="memory-layer-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Request</p>
+                <h2>Что ушло в модель</h2>
+              </div>
+            </div>
+            <pre class="summary-text memory-pre" id="requestPreview"></pre>
+          </section>
+
+          <section class="memory-layer-card">
+            <div class="section-head">
+              <div>
+                <p class="eyebrow">Response</p>
+                <h2>Что вернулось</h2>
+              </div>
+            </div>
+            <pre class="summary-text memory-pre" id="responsePreview"></pre>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <div class="auth-overlay hidden" id="authOverlay" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <form class="auth-dialog" id="authForm">
+        <div>
+          <p class="eyebrow">Account</p>
+          <h2 id="authTitle">Вход в memory chat</h2>
+        </div>
+        <label for="authLogin">
+          <span>Логин</span>
+          <input id="authLogin" name="login" type="text" autocomplete="username" required>
+        </label>
+        <label for="authPassword">
+          <span>Пароль</span>
+          <input id="authPassword" name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <p class="auth-error" id="authError"></p>
+        <div class="button-row">
+          <button class="primary-button" id="loginButton" type="submit">Войти</button>
+          <button class="ghost-button" id="registerButton" type="button">Регистрация</button>
+        </div>
+      </form>
+    </div>
+
+    <script src="/chat_memory.js"></script>
+  </body>
+</html>
