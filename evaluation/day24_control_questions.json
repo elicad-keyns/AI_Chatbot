@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "corpus": "summaries/2026_06_29_RAG_Эмбеддинги,_векторный_поиск_и_чанкинг.md",
+  "settings": {
+    "strategy": "structural",
+    "topK": 5,
+    "minScore": 0.25,
+    "queryRewrite": true,
+    "relevanceFilter": true
+  },
+  "questions": [
+    {
+      "id": "day24-01",
+      "question": "Чем RAG отличается от MCP?",
+      "shouldKnow": true,
+      "expectedSection": "Что такое RAG"
+    },
+    {
+      "id": "day24-02",
+      "question": "Из каких шагов состоит RAG-пайплайн после вопроса пользователя?",
+      "shouldKnow": true,
+      "expectedSection": "Пайплайн RAG"
+    },
+    {
+      "id": "day24-03",
+      "question": "Чем эмбеддинг-модель отличается от генеративной модели?",
+      "shouldKnow": true,
+      "expectedSection": "Эмбеддинг-модели vs Генеративные модели"
+    },
+    {
+      "id": "day24-04",
+      "question": "Что означают значения косинусного сходства 1, 0 и -1?",
+      "shouldKnow": true,
+      "expectedSection": "Косинусное сходство"
+    },
+    {
+      "id": "day24-05",
+      "question": "Какой недостаток есть у чанкинга фиксированного размера?",
+      "shouldKnow": true,
+      "expectedSection": "Метод 1: Фиксированный размер"
+    },
+    {
+      "id": "day24-06",
+      "question": "Зачем нужен overlap между чанками?",
+      "shouldKnow": true,
+      "expectedSection": "Overlap (перекрытие)"
+    },
+    {
+      "id": "day24-07",
+      "question": "Какой размер чанка рекомендуется в уроке?",
+      "shouldKnow": true,
+      "expectedSection": "Чанкинг (разбивка текста)"
+    },
+    {
+      "id": "day24-08",
+      "question": "Как работает reranking и в чём его компромисс?",
+      "shouldKnow": true,
+      "expectedSection": "Реранкинг (Reranking)"
+    },
+    {
+      "id": "day24-09",
+      "question": "Какая погода будет завтра в Астрахани?",
+      "shouldKnow": false,
+      "expectedSection": null
+    },
+    {
+      "id": "day24-10",
+      "question": "Как приготовить классический борщ?",
+      "shouldKnow": false,
+      "expectedSection": null
+    }
+  ]
+}

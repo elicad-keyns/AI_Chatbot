@@ -19,6 +19,8 @@ import type {
   McpServerConfig,
   AgentStreamDelta,
   OrchestratorAction,
+  RagCitationQuote,
+  RagGroundingInfo,
   RagProcessInfo,
   RagSourceReference,
   ShortTermCompressionSettings,
@@ -756,7 +758,9 @@ function normalizeChatMessage(message: Partial<ChatMessage>): ChatMessage | null
     content: message.content,
     mcpSteps: normalizeMcpExecutionSteps(message.mcpSteps),
     ragSources: normalizeRagSources(message.ragSources),
-    ragProcess: normalizeRagProcess(message.ragProcess)
+    ragProcess: normalizeRagProcess(message.ragProcess),
+    ragCitations: normalizeRagCitations(message.ragCitations),
+    ragGrounding: normalizeRagGrounding(message.ragGrounding)
   };
 }
 
@@ -807,6 +811,43 @@ function normalizeRagProcess(value: unknown): RagProcessInfo | undefined {
     rewriteEnabled: process.rewriteEnabled !== false,
     filterEnabled: process.filterEnabled !== false
   } as RagProcessInfo;
+}
+
+function normalizeRagCitations(value: unknown): RagCitationQuote[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const citations = value.filter((item): item is RagCitationQuote => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    const citation = item as Partial<RagCitationQuote>;
+    return typeof citation.citationId === "string"
+      && typeof citation.source === "string"
+      && typeof citation.section === "string"
+      && typeof citation.chunkId === "string"
+      && typeof citation.score === "number"
+      && typeof citation.quote === "string"
+      && typeof citation.verified === "boolean";
+  });
+  return citations.length > 0 ? citations : undefined;
+}
+
+function normalizeRagGrounding(value: unknown): RagGroundingInfo | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const grounding = value as Partial<RagGroundingInfo>;
+  if (
+    !["verified", "repaired", "blocked", "insufficient_context"].includes(grounding.status ?? "")
+    || typeof grounding.sourcesPresent !== "boolean"
+    || typeof grounding.quotesPresent !== "boolean"
+    || typeof grounding.allQuotesVerified !== "boolean"
+    || typeof grounding.message !== "string"
+  ) {
+    return undefined;
+  }
+  return grounding as RagGroundingInfo;
 }
 
 function getMcpToolLabel(toolName: string): string {
@@ -940,14 +981,20 @@ function McpExecutionPanel({ steps }: { steps: McpExecutionStep[] }) {
   );
 }
 
-function RagSourcesPanel({ sources }: { sources: RagSourceReference[] }) {
+function RagSourcesPanel({
+  sources,
+  label = "Использованные источники"
+}: {
+  sources: RagSourceReference[];
+  label?: string;
+}) {
   if (sources.length === 0) {
     return null;
   }
 
   return (
     <div className="rag-source-panel" aria-label="Источники RAG">
-      <span className="rag-source-label">Использованные источники</span>
+      <span className="rag-source-label">{label}</span>
       <div className="rag-source-list">
         {sources.map((source) => (
           <span
@@ -1032,6 +1079,52 @@ function RagProcessPanel({ process }: { process: RagProcessInfo }) {
           </div>
         </div>
       </div>
+    </section>
+  );
+}
+
+function RagGroundingPanel({
+  grounding,
+  citations
+}: {
+  grounding: RagGroundingInfo;
+  citations: RagCitationQuote[];
+}) {
+  const statusLabel = grounding.status === "verified"
+    ? "Источники и цитаты проверены"
+    : grounding.status === "repaired"
+      ? "Источники и цитаты восстановлены"
+    : grounding.status === "blocked"
+      ? "Неподтверждённый ответ заблокирован"
+      : "Недостаточно релевантного контекста";
+
+  return (
+    <section className={`rag-grounding-panel ${grounding.status}`} aria-label="Проверка источников и цитат">
+      <div className="rag-grounding-header">
+        <span className="rag-grounding-indicator" aria-hidden="true" />
+        <div>
+          <b>{statusLabel}</b>
+          <small>{grounding.message}</small>
+        </div>
+      </div>
+      {citations.length > 0 && (
+        <div className="rag-citation-list">
+          {citations.map((citation) => (
+            <article className="rag-citation-card" key={`${citation.citationId}-${citation.chunkId}`}>
+              <div className="rag-citation-meta">
+                <b>[{citation.citationId}] {citation.source}</b>
+                <span>{citation.section} · {citation.chunkId} · score {citation.score.toFixed(3)}</span>
+              </div>
+              <blockquote>«{citation.quote}»</blockquote>
+              <small className={citation.verified ? "verified" : "invalid"}>
+                {citation.verified
+                  ? "✓ Дословная цитата найдена в чанке"
+                  : "Цитата не подтверждена"}
+              </small>
+            </article>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -2267,6 +2360,8 @@ function App() {
           content: reply.content,
           ragSources: reply.ragSources,
           ragProcess: reply.ragProcess,
+          ragCitations: reply.ragCitations,
+          ragGrounding: reply.ragGrounding,
           mcpSteps: requestMcpSteps.length > 0
               ? requestMcpSteps
             : reply.debug?.mcpToolCalls?.map((call) => ({
@@ -2728,8 +2823,19 @@ function App() {
                   {message.ragProcess && (
                     <RagProcessPanel process={message.ragProcess} />
                   )}
-                  {message.ragSources && (
-                    <RagSourcesPanel sources={message.ragSources} />
+                  {message.ragGrounding && (
+                    <RagGroundingPanel
+                      grounding={message.ragGrounding}
+                      citations={message.ragCitations ?? []}
+                    />
+                  )}
+                  {message.ragSources && !message.ragCitations?.length && (
+                    <RagSourcesPanel
+                      sources={message.ragSources}
+                      label={message.ragGrounding?.status === "verified"
+                        ? "Использованные источники"
+                        : "Найденные чанки"}
+                    />
                   )}
                   {message.mcpSteps && message.mcpSteps.length > 0 && (
                     <McpExecutionPanel steps={message.mcpSteps} />

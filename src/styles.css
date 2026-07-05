@@ -2037,6 +2037,111 @@ button:hover .button-icon {
   font-weight: 700;
 }
 
+.rag-grounding-panel {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+  border: 1px solid color-mix(in srgb, #1f9d55 38%, var(--border));
+  border-radius: 14px;
+  padding: 10px;
+  background: color-mix(in srgb, #1f9d55 7%, var(--input-bg));
+}
+
+.rag-grounding-panel.blocked,
+.rag-grounding-panel.insufficient_context {
+  border-color: color-mix(in srgb, #d68c16 48%, var(--border));
+  background: color-mix(in srgb, #d68c16 8%, var(--input-bg));
+}
+
+.rag-grounding-header,
+.rag-citation-meta {
+  display: flex;
+  align-items: center;
+}
+
+.rag-grounding-header {
+  gap: 8px;
+}
+
+.rag-grounding-header > div,
+.rag-citation-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rag-grounding-header b {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.rag-grounding-header small,
+.rag-citation-meta span {
+  color: var(--muted-text);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.rag-grounding-indicator {
+  flex: 0 0 9px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #1f9d55;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #1f9d55 14%, transparent);
+}
+
+.rag-grounding-panel.blocked .rag-grounding-indicator,
+.rag-grounding-panel.insufficient_context .rag-grounding-indicator {
+  background: #d68c16;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #d68c16 14%, transparent);
+}
+
+.rag-citation-list {
+  display: grid;
+  gap: 7px;
+}
+
+.rag-citation-card {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 9px;
+  background: color-mix(in srgb, var(--surface-bg) 90%, transparent);
+}
+
+.rag-citation-meta b {
+  overflow: hidden;
+  color: color-mix(in srgb, #1f9d55 82%, var(--text));
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-citation-card blockquote {
+  margin: 0;
+  border-left: 2px solid color-mix(in srgb, #1f9d55 58%, var(--border));
+  padding-left: 8px;
+  color: var(--text);
+  font-size: 10px;
+  font-style: normal;
+  line-height: 1.5;
+}
+
+.rag-citation-card > small {
+  color: var(--muted-text);
+  font-size: 9px;
+}
+
+.rag-citation-card > small.verified {
+  color: #18794e;
+}
+
+.rag-citation-card > small.invalid {
+  color: #b42318;
+}
+
 .rag-source-panel {
   display: grid;
   gap: 6px;

@@ -8,6 +8,8 @@ export interface ChatMessage {
   mcpSteps?: McpExecutionStep[];
   ragSources?: RagSourceReference[];
   ragProcess?: RagProcessInfo;
+  ragCitations?: RagCitationQuote[];
+  ragGrounding?: RagGroundingInfo;
 }
 
 export interface RagSourceReference {
@@ -35,6 +37,25 @@ export interface RagProcessInfo {
   finalTopK: number;
   contextCount: number;
   retrievalMs: number;
+}
+
+export interface RagCitationQuote {
+  citationId: string;
+  source: string;
+  title: string;
+  section: string;
+  chunkId: string;
+  score: number;
+  quote: string;
+  verified: boolean;
+}
+
+export interface RagGroundingInfo {
+  status: "verified" | "repaired" | "blocked" | "insufficient_context";
+  sourcesPresent: boolean;
+  quotesPresent: boolean;
+  allQuotesVerified: boolean;
+  message: string;
 }
 
 export interface RagSettings {
@@ -292,6 +313,8 @@ export interface AgentReply {
   taskState?: TaskState;
   ragSources: RagSourceReference[];
   ragProcess?: RagProcessInfo;
+  ragCitations: RagCitationQuote[];
+  ragGrounding?: RagGroundingInfo;
 }
 
 export interface AgentRequest {
