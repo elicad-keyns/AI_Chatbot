@@ -21,6 +21,9 @@ const MEMORY_REASON_MAX_CHARS: usize = 180;
 const SHORT_TERM_SUMMARY_MODEL: &str = "gpt-4.1-mini";
 const SHORT_TERM_SUMMARY_MAX_OUTPUT_TOKENS: u16 = 700;
 const SHORT_TERM_SUMMARY_MAX_CHARS: usize = 3_500;
+const RAG_QUERY_REWRITE_MODEL: &str = "gpt-4.1-mini";
+const RAG_QUERY_REWRITE_MAX_OUTPUT_TOKENS: u16 = 160;
+const RAG_QUERY_REWRITE_INSTRUCTIONS: &str = "Rewrite the latest user message into one concise, standalone search query for a local document index. Use the preceding conversation only to resolve references and omitted context. Preserve names, technical terms, numbers, and the user's language. Do not answer the question. Do not explain the rewrite. Output only the search query as plain text.";
 const MAX_MCP_TOOL_STEPS: usize = 6;
 const MCP_TOOL_ROUTER_INSTRUCTIONS: &str = "You are the MCP tool router for an assistant. \
 Select the next single provided function needed to fulfill the user's latest request. You may be \
@@ -161,6 +164,10 @@ pub struct RagSettings {
     pub enabled: bool,
     #[serde(default)]
     pub debug: bool,
+    #[serde(default = "default_rag_stage_enabled")]
+    pub rewrite_enabled: bool,
+    #[serde(default = "default_rag_stage_enabled")]
+    pub filter_enabled: bool,
     #[serde(default = "default_rag_python_command")]
     pub python_command: String,
     #[serde(default)]
@@ -180,6 +187,8 @@ impl Default for RagSettings {
         Self {
             enabled: false,
             debug: false,
+            rewrite_enabled: default_rag_stage_enabled(),
+            filter_enabled: default_rag_stage_enabled(),
             python_command: default_rag_python_command(),
             documents_path: String::new(),
             output_path: default_rag_output_path(),
@@ -208,6 +217,10 @@ fn default_rag_top_k() -> usize {
 
 fn default_rag_min_score() -> f32 {
     0.25
+}
+
+fn default_rag_stage_enabled() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -254,9 +267,65 @@ impl From<&RagChunk> for RagSourceReference {
 pub struct RagContext {
     pub strategy: String,
     pub query: String,
+    #[serde(default)]
+    pub original_query: String,
+    #[serde(default)]
+    pub rewrite_enabled: bool,
+    #[serde(default)]
+    pub rewrite_applied: bool,
+    #[serde(default)]
+    pub rewrite_status: String,
+    #[serde(default)]
+    pub filter_enabled: bool,
     pub index_path: String,
     pub retrieval_ms: u64,
+    pub candidate_top_k: usize,
+    pub candidate_count: usize,
+    pub min_score: f32,
+    pub passed_count: usize,
+    pub rejected_count: usize,
+    pub final_top_k: usize,
     pub chunks: Vec<RagChunk>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagProcessInfo {
+    pub original_query: String,
+    pub rewritten_query: String,
+    pub rewrite_enabled: bool,
+    pub rewrite_applied: bool,
+    pub rewrite_status: String,
+    pub filter_enabled: bool,
+    pub candidate_top_k: usize,
+    pub candidate_count: usize,
+    pub min_score: f32,
+    pub passed_count: usize,
+    pub rejected_count: usize,
+    pub final_top_k: usize,
+    pub context_count: usize,
+    pub retrieval_ms: u64,
+}
+
+impl From<&RagContext> for RagProcessInfo {
+    fn from(context: &RagContext) -> Self {
+        Self {
+            original_query: context.original_query.clone(),
+            rewritten_query: context.query.clone(),
+            rewrite_enabled: context.rewrite_enabled,
+            rewrite_applied: context.rewrite_applied,
+            rewrite_status: context.rewrite_status.clone(),
+            filter_enabled: context.filter_enabled,
+            candidate_top_k: context.candidate_top_k,
+            candidate_count: context.candidate_count,
+            min_score: context.min_score,
+            passed_count: context.passed_count,
+            rejected_count: context.rejected_count,
+            final_top_k: context.final_top_k,
+            context_count: context.chunks.len(),
+            retrieval_ms: context.retrieval_ms,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -270,6 +339,7 @@ pub struct AgentReply {
     pub memory_decisions: Vec<MemoryDecision>,
     pub task_state: Option<TaskState>,
     pub rag_sources: Vec<RagSourceReference>,
+    pub rag_process: Option<RagProcessInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -556,6 +626,68 @@ impl Agent {
             .as_ref()
             .map(|context| context.chunks.iter().map(Into::into).collect())
             .unwrap_or_default()
+    }
+
+    fn rag_process_info(&self) -> Option<RagProcessInfo> {
+        self.rag_context.as_ref().map(Into::into)
+    }
+
+    pub async fn rewrite_rag_query(&self, messages: &[ChatMessage]) -> Result<String, String> {
+        let conversation = messages
+            .iter()
+            .rev()
+            .filter(|message| !message.content.trim().is_empty())
+            .take(8)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .map(|message| {
+                format!(
+                    "{}: {}",
+                    normalize_role(&message.role),
+                    preview_text(message.content.trim(), 1200)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if conversation.trim().is_empty() {
+            return Err("No conversation available for RAG query rewrite.".to_owned());
+        }
+
+        let body = json!({
+            "model": RAG_QUERY_REWRITE_MODEL,
+            "instructions": RAG_QUERY_REWRITE_INSTRUCTIONS,
+            "input": conversation,
+            "max_output_tokens": RAG_QUERY_REWRITE_MAX_OUTPUT_TOKENS
+        });
+        let response = self
+            .client
+            .post("https://api.openai.com/v1/responses")
+            .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|error| format!("RAG query rewrite request failed: {error}"))?;
+        let status = response.status();
+        let response_text = response
+            .text()
+            .await
+            .map_err(|error| format!("RAG query rewrite response read failed: {error}"))?;
+        if !status.is_success() {
+            return Err(format_openai_error(status.as_u16(), &response_text));
+        }
+        let parsed = serde_json::from_str::<OpenAIResponse>(&response_text)
+            .map_err(|error| format!("RAG query rewrite response parse failed: {error}"))?;
+        let rewritten = parsed
+            .extract_text()
+            .map(|value| clean_rag_query(&value))
+            .unwrap_or_default();
+        if rewritten.is_empty() {
+            Err("RAG query rewrite returned an empty query.".to_owned())
+        } else {
+            Ok(rewritten)
+        }
     }
 
     fn apply_rag_debug(&self, debug: &mut MemoryDebugInfo) {
@@ -966,6 +1098,7 @@ impl Agent {
             memory_decisions: memory_router_result.decisions,
             task_state: None,
             rag_sources: self.rag_source_references(),
+            rag_process: self.rag_process_info(),
         })
     }
 
@@ -1296,6 +1429,7 @@ impl Agent {
             memory_decisions: memory_router_result.decisions,
             task_state: Some(task_state),
             rag_sources: self.rag_source_references(),
+            rag_process: self.rag_process_info(),
         })
     }
 
@@ -2834,6 +2968,18 @@ fn preview_text(value: &str, max_chars: usize) -> String {
     preview
 }
 
+fn clean_rag_query(value: &str) -> String {
+    let trimmed = value
+        .trim()
+        .trim_start_matches("```text")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+        .trim_matches(['\'', '"', '`']);
+    let compact = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+    preview_text(&compact, 500)
+}
+
 fn normalize_role(role: &str) -> &'static str {
     match role {
         "assistant" => "assistant",
@@ -3352,8 +3498,19 @@ mod tests {
         let context = RagContext {
             strategy: "structural".to_owned(),
             query: "Как работает память?".to_owned(),
+            original_query: "А как она работает?".to_owned(),
+            rewrite_enabled: true,
+            rewrite_applied: true,
+            rewrite_status: "rewritten".to_owned(),
+            filter_enabled: true,
             index_path: "test-index".to_owned(),
             retrieval_ms: 12,
+            candidate_top_k: 20,
+            candidate_count: 20,
+            min_score: 0.25,
+            passed_count: 4,
+            rejected_count: 16,
+            final_top_k: 5,
             chunks: vec![RagChunk {
                 citation_id: "S1".to_owned(),
                 faiss_id: 7,
@@ -3378,8 +3535,19 @@ mod tests {
         let context = RagContext {
             strategy: "structural".to_owned(),
             query: "Неизвестный вопрос".to_owned(),
+            original_query: "Неизвестный вопрос".to_owned(),
+            rewrite_enabled: true,
+            rewrite_applied: false,
+            rewrite_status: "unchanged".to_owned(),
+            filter_enabled: true,
             index_path: "test-index".to_owned(),
             retrieval_ms: 4,
+            candidate_top_k: 20,
+            candidate_count: 20,
+            min_score: 0.4,
+            passed_count: 0,
+            rejected_count: 20,
+            final_top_k: 5,
             chunks: Vec::new(),
         };
         let instruction = build_rag_instruction(Some(&context));
@@ -3387,5 +3555,13 @@ mod tests {
         assert!(instruction.contains("no chunks passed"));
         assert!(instruction.contains("В проиндексированных документах недостаточно информации"));
         assert!(instruction.contains("must not answer from general knowledge"));
+    }
+
+    #[test]
+    fn cleans_rag_query_wrapper_without_changing_language() {
+        assert_eq!(
+            clean_rag_query("```text\n\"Как работает структурный чанкинг?\"\n```"),
+            "Как работает структурный чанкинг?"
+        );
     }
 }

@@ -7,6 +7,7 @@ export interface ChatMessage {
   swarm?: SwarmDiscussion;
   mcpSteps?: McpExecutionStep[];
   ragSources?: RagSourceReference[];
+  ragProcess?: RagProcessInfo;
 }
 
 export interface RagSourceReference {
@@ -19,9 +20,28 @@ export interface RagSourceReference {
   score: number;
 }
 
+export interface RagProcessInfo {
+  originalQuery: string;
+  rewrittenQuery: string;
+  rewriteEnabled: boolean;
+  rewriteApplied: boolean;
+  rewriteStatus: string;
+  filterEnabled: boolean;
+  candidateTopK: number;
+  candidateCount: number;
+  minScore: number;
+  passedCount: number;
+  rejectedCount: number;
+  finalTopK: number;
+  contextCount: number;
+  retrievalMs: number;
+}
+
 export interface RagSettings {
   enabled: boolean;
   debug: boolean;
+  rewriteEnabled: boolean;
+  filterEnabled: boolean;
   pythonCommand: string;
   documentsPath: string;
   outputPath: string;
@@ -168,6 +188,8 @@ export interface DocumentIndexingSettings {
   ragStrategy: "fixed" | "structural";
   ragTopK: number;
   ragMinScore: number;
+  ragQueryRewriteEnabled: boolean;
+  ragRelevanceFilterEnabled: boolean;
 }
 
 export interface DocumentIndexingLogEvent {
@@ -269,6 +291,7 @@ export interface AgentReply {
   memoryDecisions?: MemoryDecision[];
   taskState?: TaskState;
   ragSources: RagSourceReference[];
+  ragProcess?: RagProcessInfo;
 }
 
 export interface AgentRequest {

@@ -53,6 +53,31 @@ async fn send_agent_message(
             .find(|message| message.role.trim().eq_ignore_ascii_case("user"))
             .map(|message| message.content.trim().to_owned())
             .unwrap_or_default();
+        let (search_query, rewrite_status) = if request.rag.rewrite_enabled {
+            let _ = app_handle.emit(
+                "agent_stream_delta",
+                AgentStreamDelta {
+                    request_id: request_id.clone(),
+                    delta: "rewriting".to_owned(),
+                    channel: "rag".to_owned(),
+                    actor: None,
+                    server_name: None,
+                },
+            );
+            let rewrite_agent = Agent::from_request(&request).map_err(|error| error.to_string())?;
+            match rewrite_agent.rewrite_rag_query(&request.messages).await {
+                Ok(rewritten) if rewritten.trim() != question.trim() => {
+                    (rewritten, "rewritten".to_owned())
+                }
+                Ok(_) => (question.clone(), "unchanged".to_owned()),
+                Err(error) => (
+                    question.clone(),
+                    format!("fallback: {}", error.chars().take(180).collect::<String>()),
+                ),
+            }
+        } else {
+            (question.clone(), "disabled".to_owned())
+        };
         let _ = app_handle.emit(
             "agent_stream_delta",
             AgentStreamDelta {
@@ -63,7 +88,8 @@ async fn send_agent_message(
                 server_name: None,
             },
         );
-        let context = retrieve_rag_context(&request.rag, &question).await?;
+        let context =
+            retrieve_rag_context(&request.rag, &question, &search_query, &rewrite_status).await?;
         request.rag_context = Some(context);
         let _ = app_handle.emit(
             "agent_stream_delta",

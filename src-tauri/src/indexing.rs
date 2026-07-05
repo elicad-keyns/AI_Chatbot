@@ -263,7 +263,9 @@ pub async fn run_document_indexing(
 
 pub async fn retrieve_rag_context(
     settings: &RagSettings,
-    query: &str,
+    original_query: &str,
+    search_query: &str,
+    rewrite_status: &str,
 ) -> Result<RagContext, String> {
     if !settings.enabled {
         return Err("RAG выключен".to_owned());
@@ -271,7 +273,7 @@ pub async fn retrieve_rag_context(
     if settings.documents_path.trim().is_empty() {
         return Err("Для RAG сначала выберите и проиндексируйте папку документов".to_owned());
     }
-    if query.trim().is_empty() {
+    if search_query.trim().is_empty() {
         return Err("Невозможно выполнить RAG-поиск по пустому вопросу".to_owned());
     }
     if !matches!(settings.strategy.as_str(), "fixed" | "structural") {
@@ -308,8 +310,14 @@ pub async fn retrieve_rag_context(
         .map_err(|error| format!("Не удалось подготовить RAG retriever: {error}"))?;
     let config_json = serde_json::to_vec(&serde_json::json!({
         "indexPath": index_path,
-        "query": query,
+        "query": search_query,
         "topK": settings.top_k.clamp(1, 20),
+        "candidateTopK": if settings.filter_enabled {
+            settings.top_k.clamp(1, 20).saturating_mul(4).min(100)
+        } else {
+            settings.top_k.clamp(1, 20)
+        },
+        "filterEnabled": settings.filter_enabled,
         "minScore": settings.min_score.clamp(-1.0, 1.0),
     }))
     .map_err(|error| format!("Не удалось сериализовать RAG-настройки: {error}"))?;
@@ -373,6 +381,12 @@ pub async fn retrieve_rag_context(
             .or_else(|| (!stderr.is_empty()).then_some(stderr))
             .unwrap_or_else(|| "RAG retriever завершился с ошибкой".to_owned()));
     }
-    serde_json::from_str::<RagContext>(&stdout)
-        .map_err(|error| format!("Некорректный ответ RAG retriever: {error}"))
+    let mut context = serde_json::from_str::<RagContext>(&stdout)
+        .map_err(|error| format!("Некорректный ответ RAG retriever: {error}"))?;
+    context.original_query = original_query.trim().to_owned();
+    context.rewrite_enabled = settings.rewrite_enabled;
+    context.rewrite_applied = context.original_query != context.query;
+    context.rewrite_status = rewrite_status.to_owned();
+    context.filter_enabled = settings.filter_enabled;
+    Ok(context)
 }

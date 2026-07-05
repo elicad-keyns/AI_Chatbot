@@ -8,6 +8,49 @@ import time
 from pathlib import Path
 
 
+def filter_candidates(
+    scores,
+    identifiers,
+    chunks,
+    min_score: float,
+    final_top_k: int,
+    filter_enabled: bool = True,
+):
+    """Apply the explicit second-stage relevance filter to FAISS candidates."""
+    candidates = [
+        (float(score), int(identifier))
+        for score, identifier in zip(scores, identifiers)
+        if int(identifier) >= 0
+    ]
+    passed = (
+        [candidate for candidate in candidates if candidate[0] >= min_score]
+        if filter_enabled
+        else candidates
+    )
+    results = []
+    for score, identifier in passed[:final_top_k]:
+        chunk = chunks[identifier]
+        results.append(
+            {
+                "citationId": f"S{len(results) + 1}",
+                "faissId": identifier,
+                "chunkId": str(chunk.get("chunk_id", f"chunk_{identifier}")),
+                "source": str(chunk.get("source", "unknown")),
+                "title": str(chunk.get("title", "")),
+                "section": str(chunk.get("section", "Документ")),
+                "score": score,
+                "text": str(chunk.get("text", "")),
+            }
+        )
+
+    return {
+        "candidateCount": len(candidates),
+        "passedCount": len(passed),
+        "rejectedCount": len(candidates) - len(passed),
+        "chunks": results,
+    }
+
+
 def main() -> int:
     started = time.perf_counter()
     config = json.load(sys.stdin)
@@ -31,36 +74,23 @@ def main() -> int:
     query = str(config.get("query", "")).strip()
     if not query:
         raise ValueError("Пустой RAG-запрос")
-    top_k = max(1, min(int(config.get("topK", 5)), 20))
+    final_top_k = max(1, min(int(config.get("topK", 5)), 20))
+    candidate_top_k = max(
+        final_top_k,
+        min(int(config.get("candidateTopK", final_top_k * 4)), 100),
+    )
     min_score = float(config.get("minScore", 0.25))
+    filter_enabled = bool(config.get("filterEnabled", True))
     model = SentenceTransformer(metadata["embedding_model"])
     query_vector = model.encode(
         [query], convert_to_numpy=True, normalize_embeddings=True, show_progress_bar=False
     )
 
-    candidate_count = min(index.ntotal, max(top_k * 4, top_k))
-    scores, identifiers = index.search(query_vector, candidate_count)
-    results = []
-    for score, identifier in zip(scores[0], identifiers[0]):
-        identifier = int(identifier)
-        score = float(score)
-        if identifier < 0 or score < min_score:
-            continue
-        chunk = chunks[identifier]
-        results.append(
-            {
-                "citationId": f"S{len(results) + 1}",
-                "faissId": identifier,
-                "chunkId": str(chunk.get("chunk_id", f"chunk_{identifier}")),
-                "source": str(chunk.get("source", "unknown")),
-                "title": str(chunk.get("title", "")),
-                "section": str(chunk.get("section", "Документ")),
-                "score": score,
-                "text": str(chunk.get("text", "")),
-            }
-        )
-        if len(results) >= top_k:
-            break
+    search_count = min(index.ntotal, candidate_top_k)
+    scores, identifiers = index.search(query_vector, search_count)
+    filtered = filter_candidates(
+        scores[0], identifiers[0], chunks, min_score, final_top_k, filter_enabled
+    )
 
     print(
         json.dumps(
@@ -69,7 +99,14 @@ def main() -> int:
                 "query": query,
                 "indexPath": str(index_dir.resolve()),
                 "retrievalMs": round((time.perf_counter() - started) * 1000),
-                "chunks": results,
+                "candidateTopK": candidate_top_k,
+                "candidateCount": filtered["candidateCount"],
+                "minScore": min_score,
+                "filterEnabled": filter_enabled,
+                "passedCount": filtered["passedCount"],
+                "rejectedCount": filtered["rejectedCount"],
+                "finalTopK": final_top_k,
+                "chunks": filtered["chunks"],
             },
             ensure_ascii=False,
         ),

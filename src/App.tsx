@@ -19,6 +19,7 @@ import type {
   McpServerConfig,
   AgentStreamDelta,
   OrchestratorAction,
+  RagProcessInfo,
   RagSourceReference,
   ShortTermCompressionSettings,
   ShortTermSummary,
@@ -172,7 +173,7 @@ const TASK_ALLOWED_TRANSITIONS: Record<TaskPhase, TaskPhase[]> = {
 type ThemeMode = "light" | "dark";
 type PersistentMemoryLayer = "working" | "longTerm";
 type MemoryAction = "saved" | "deleted" | "skipped";
-type AgentPhase = "idle" | "retrieving" | "compressing" | "streaming" | "memory";
+type AgentPhase = "idle" | "rewriting" | "retrieving" | "compressing" | "streaming" | "memory";
 
 interface AppSettings {
   apiKey: string;
@@ -260,7 +261,9 @@ const DEFAULT_SETTINGS: AppSettings = {
     ragEnabled: false,
     ragStrategy: "structural",
     ragTopK: 5,
-    ragMinScore: 0.25
+    ragMinScore: 0.25,
+    ragQueryRewriteEnabled: true,
+    ragRelevanceFilterEnabled: true
   }
 };
 
@@ -751,8 +754,59 @@ function normalizeChatMessage(message: Partial<ChatMessage>): ChatMessage | null
   return {
     role: message.role,
     content: message.content,
-    mcpSteps: normalizeMcpExecutionSteps(message.mcpSteps)
+    mcpSteps: normalizeMcpExecutionSteps(message.mcpSteps),
+    ragSources: normalizeRagSources(message.ragSources),
+    ragProcess: normalizeRagProcess(message.ragProcess)
   };
+}
+
+function normalizeRagSources(value: unknown): RagSourceReference[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const sources = value.filter((item): item is RagSourceReference => {
+    if (!item || typeof item !== "object") {
+      return false;
+    }
+    const source = item as Partial<RagSourceReference>;
+    return typeof source.citationId === "string"
+      && typeof source.chunkId === "string"
+      && typeof source.source === "string"
+      && typeof source.section === "string"
+      && typeof source.score === "number";
+  });
+  return sources.length > 0 ? sources : undefined;
+}
+
+function normalizeRagProcess(value: unknown): RagProcessInfo | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const process = value as Partial<RagProcessInfo>;
+  const numericFields = [
+    process.candidateTopK,
+    process.candidateCount,
+    process.minScore,
+    process.passedCount,
+    process.rejectedCount,
+    process.finalTopK,
+    process.contextCount,
+    process.retrievalMs
+  ];
+  if (
+    typeof process.originalQuery !== "string"
+    || typeof process.rewrittenQuery !== "string"
+    || typeof process.rewriteApplied !== "boolean"
+    || typeof process.rewriteStatus !== "string"
+    || numericFields.some((field) => typeof field !== "number")
+  ) {
+    return undefined;
+  }
+  return {
+    ...process,
+    rewriteEnabled: process.rewriteEnabled !== false,
+    filterEnabled: process.filterEnabled !== false
+  } as RagProcessInfo;
 }
 
 function getMcpToolLabel(toolName: string): string {
@@ -893,7 +947,7 @@ function RagSourcesPanel({ sources }: { sources: RagSourceReference[] }) {
 
   return (
     <div className="rag-source-panel" aria-label="Источники RAG">
-      <span className="rag-source-label">Контекст RAG</span>
+      <span className="rag-source-label">Использованные источники</span>
       <div className="rag-source-list">
         {sources.map((source) => (
           <span
@@ -909,6 +963,76 @@ function RagSourcesPanel({ sources }: { sources: RagSourceReference[] }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function RagProcessPanel({ process }: { process: RagProcessInfo }) {
+  const rewriteFallback = process.rewriteEnabled
+    && process.rewriteStatus.startsWith("fallback:");
+
+  return (
+    <section className="rag-process-panel" aria-label="Этапы RAG-поиска">
+      <div className="rag-process-header">
+        <span>RAG · как найден ответ</span>
+        <small>{process.retrievalMs} мс</small>
+      </div>
+      <div className="rag-process-flow">
+        <div className={`rag-process-step ${
+          !process.rewriteEnabled ? "disabled" : rewriteFallback ? "warning" : "complete"
+        }`}>
+          <span className="rag-process-index">1</span>
+          <div>
+            <b>Query rewrite</b>
+            <small>
+              {!process.rewriteEnabled
+                ? "Отключён в настройках"
+                : rewriteFallback
+                ? "Не выполнен · использован исходный запрос"
+                : process.rewriteApplied
+                  ? "Запрос уточнён по контексту чата"
+                  : "Запрос уже был самодостаточным"}
+            </small>
+          </div>
+        </div>
+        <div className="rag-query-comparison" title={rewriteFallback ? process.rewriteStatus : undefined}>
+          <span>{process.originalQuery}</span>
+          {process.rewriteEnabled && process.rewriteApplied && (
+            <>
+              <i aria-hidden="true">→</i>
+              <strong>{process.rewrittenQuery}</strong>
+            </>
+          )}
+        </div>
+        <div className={`rag-process-step ${process.filterEnabled ? "complete" : "disabled"}`}>
+          <span className="rag-process-index">2</span>
+          <div>
+            <b>Поиск в FAISS</b>
+            <small>
+              Top-{process.candidateTopK} до фильтра · найдено {process.candidateCount}
+            </small>
+          </div>
+        </div>
+        <div className="rag-process-step complete">
+          <span className="rag-process-index">3</span>
+          <div>
+            <b>Фильтр релевантности</b>
+            <small>{process.filterEnabled
+              ? `score ≥ ${process.minScore.toFixed(2)} · прошло ${process.passedCount} · отсечено ${process.rejectedCount}`
+              : "Отключён · кандидаты переданы без отсечения"}
+            </small>
+          </div>
+        </div>
+        <div className={`rag-process-step ${process.contextCount > 0 ? "complete" : "warning"}`}>
+          <span className="rag-process-index">4</span>
+          <div>
+            <b>Контекст для LLM</b>
+            <small>
+              Top-{process.finalTopK} после фильтра · добавлено {process.contextCount}
+            </small>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2031,7 +2155,13 @@ function App() {
           }
 
           if (event.payload.channel === "rag") {
-            setAgentPhase(event.payload.delta === "searching" ? "retrieving" : "streaming");
+            setAgentPhase(
+              event.payload.delta === "rewriting"
+                ? "rewriting"
+                : event.payload.delta === "searching"
+                  ? "retrieving"
+                  : "streaming"
+            );
             return;
           }
 
@@ -2108,6 +2238,8 @@ function App() {
           rag: {
             enabled: settings.documentIndexing.ragEnabled,
             debug: settings.documentIndexing.debug,
+            rewriteEnabled: settings.documentIndexing.ragQueryRewriteEnabled,
+            filterEnabled: settings.documentIndexing.ragRelevanceFilterEnabled,
             pythonCommand: settings.documentIndexing.pythonCommand,
             documentsPath: settings.documentIndexing.documentsPath,
             outputPath: settings.documentIndexing.outputPath,
@@ -2134,6 +2266,7 @@ function App() {
           role: "assistant",
           content: reply.content,
           ragSources: reply.ragSources,
+          ragProcess: reply.ragProcess,
           mcpSteps: requestMcpSteps.length > 0
               ? requestMcpSteps
             : reply.debug?.mcpToolCalls?.map((call) => ({
@@ -2592,6 +2725,9 @@ function App() {
               ) : (
                 <>
                   <p>{message.content}</p>
+                  {message.ragProcess && (
+                    <RagProcessPanel process={message.ragProcess} />
+                  )}
                   {message.ragSources && (
                     <RagSourcesPanel sources={message.ragSources} />
                   )}
@@ -2625,8 +2761,10 @@ function App() {
                 <p className="typing">
                   {agentPhase === "compressing"
                     ? "Сжимаю краткосрочную память..."
+                    : agentPhase === "rewriting"
+                      ? "Уточняю поисковый запрос по контексту чата..."
                     : agentPhase === "retrieving"
-                      ? "Ищу релевантные чанки в локальном FAISS-индексе..."
+                      ? "Ищу кандидатов в FAISS и применяю фильтр релевантности..."
                     : hasSwarmLogs
                       ? "Integrator собирает финальный ответ..."
                       : "Подключаю stream и вызываю LLM..."}
@@ -3760,6 +3898,40 @@ function App() {
                           Сначала включите индексацию, выберите папку и постройте индекс.
                         </p>
                       )}
+                      <div className="rag-stage-toggles">
+                        <label className="checkbox-field compact-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={settings.documentIndexing.ragQueryRewriteEnabled}
+                            disabled={isLoading}
+                            onChange={(event) =>
+                              updateDocumentIndexingSettings({
+                                ragQueryRewriteEnabled: event.target.checked
+                              })
+                            }
+                          />
+                          <span>
+                            <b>Query rewrite</b>
+                            <small>Уточнять запрос с учётом предыдущих сообщений чата.</small>
+                          </span>
+                        </label>
+                        <label className="checkbox-field compact-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={settings.documentIndexing.ragRelevanceFilterEnabled}
+                            disabled={isLoading}
+                            onChange={(event) =>
+                              updateDocumentIndexingSettings({
+                                ragRelevanceFilterEnabled: event.target.checked
+                              })
+                            }
+                          />
+                          <span>
+                            <b>Фильтр релевантности</b>
+                            <small>Отсекать чанки с similarity score ниже порога.</small>
+                          </span>
+                        </label>
+                      </div>
                       <div className="mcp-server-grid">
                         <label className="field">
                           <span>Стратегия поиска</span>
@@ -3799,7 +3971,10 @@ function App() {
                             max={1}
                             step={0.05}
                             value={settings.documentIndexing.ragMinScore}
-                            disabled={isLoading}
+                            disabled={
+                              isLoading
+                              || !settings.documentIndexing.ragRelevanceFilterEnabled
+                            }
                             onChange={(event) =>
                               updateDocumentIndexingSettings({
                                 ragMinScore: Math.max(-1, Math.min(1, Number(event.target.value)))
