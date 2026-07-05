@@ -19,6 +19,7 @@ import type {
   McpServerConfig,
   AgentStreamDelta,
   OrchestratorAction,
+  RagSourceReference,
   ShortTermCompressionSettings,
   ShortTermSummary,
   SwarmDiscussion,
@@ -171,7 +172,7 @@ const TASK_ALLOWED_TRANSITIONS: Record<TaskPhase, TaskPhase[]> = {
 type ThemeMode = "light" | "dark";
 type PersistentMemoryLayer = "working" | "longTerm";
 type MemoryAction = "saved" | "deleted" | "skipped";
-type AgentPhase = "idle" | "compressing" | "streaming" | "memory";
+type AgentPhase = "idle" | "retrieving" | "compressing" | "streaming" | "memory";
 
 interface AppSettings {
   apiKey: string;
@@ -255,7 +256,11 @@ const DEFAULT_SETTINGS: AppSettings = {
     fixedChunkOverlap: 150,
     structuralChunkSize: 1600,
     modelName: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-    batchSize: 32
+    batchSize: 32,
+    ragEnabled: false,
+    ragStrategy: "structural",
+    ragTopK: 5,
+    ragMinScore: 0.25
   }
 };
 
@@ -877,6 +882,32 @@ function McpExecutionPanel({ steps }: { steps: McpExecutionStep[] }) {
           </small>
         </div>
       ))}
+    </div>
+  );
+}
+
+function RagSourcesPanel({ sources }: { sources: RagSourceReference[] }) {
+  if (sources.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="rag-source-panel" aria-label="Источники RAG">
+      <span className="rag-source-label">Контекст RAG</span>
+      <div className="rag-source-list">
+        {sources.map((source) => (
+          <span
+            className="rag-source-chip"
+            key={`${source.citationId}-${source.chunkId}`}
+            title={`${source.source} · ${source.section} · ${source.chunkId} · score ${source.score.toFixed(4)}`}
+          >
+            <b>[{source.citationId}]</b>
+            <span>{source.source}</span>
+            <span>{source.section}</span>
+            <code>{source.chunkId}</code>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1999,6 +2030,11 @@ function App() {
             return;
           }
 
+          if (event.payload.channel === "rag") {
+            setAgentPhase(event.payload.delta === "searching" ? "retrieving" : "streaming");
+            return;
+          }
+
           if ((event.payload.channel ?? "final") === "swarm") {
             const actor = event.payload.actor ?? "SWARM";
             requestSwarmLogs[actor] = `${requestSwarmLogs[actor] ?? ""}${event.payload.delta}`;
@@ -2068,6 +2104,16 @@ function App() {
           },
           mcp: {
             servers: settings.mcpServers
+          },
+          rag: {
+            enabled: settings.documentIndexing.ragEnabled,
+            debug: settings.documentIndexing.debug,
+            pythonCommand: settings.documentIndexing.pythonCommand,
+            documentsPath: settings.documentIndexing.documentsPath,
+            outputPath: settings.documentIndexing.outputPath,
+            strategy: settings.documentIndexing.ragStrategy,
+            topK: settings.documentIndexing.ragTopK,
+            minScore: settings.documentIndexing.ragMinScore
           }
         }
       });
@@ -2087,6 +2133,7 @@ function App() {
         {
           role: "assistant",
           content: reply.content,
+          ragSources: reply.ragSources,
           mcpSteps: requestMcpSteps.length > 0
               ? requestMcpSteps
             : reply.debug?.mcpToolCalls?.map((call) => ({
@@ -2398,6 +2445,19 @@ function App() {
                 </div>
               )}
             </div>
+            <button
+              className={`rag-mode-button ${settings.documentIndexing.ragEnabled ? "active" : ""}`}
+              type="button"
+              disabled={isLoading}
+              onClick={() =>
+                updateDocumentIndexingSettings({
+                  ragEnabled: !settings.documentIndexing.ragEnabled
+                })
+              }
+              title="Переключить режим ответа с RAG или без RAG"
+            >
+              {settings.documentIndexing.ragEnabled ? "RAG: ON" : "RAG: OFF"}
+            </button>
             <button className="ghost-button" type="button" onClick={clearChat}>
               Очистить чат
             </button>
@@ -2437,6 +2497,11 @@ function App() {
             MCP:{" "}
             {enabledMcpServers.length > 0
               ? lastReply?.debug?.mcpStatus ?? `${enabledMcpServers.length} on`
+              : "off"}
+          </span>
+          <span>
+            RAG: {settings.documentIndexing.ragEnabled
+              ? `${settings.documentIndexing.ragStrategy} · top ${settings.documentIndexing.ragTopK}`
               : "off"}
           </span>
         </div>
@@ -2527,6 +2592,9 @@ function App() {
               ) : (
                 <>
                   <p>{message.content}</p>
+                  {message.ragSources && (
+                    <RagSourcesPanel sources={message.ragSources} />
+                  )}
                   {message.mcpSteps && message.mcpSteps.length > 0 && (
                     <McpExecutionPanel steps={message.mcpSteps} />
                   )}
@@ -2557,6 +2625,8 @@ function App() {
                 <p className="typing">
                   {agentPhase === "compressing"
                     ? "Сжимаю краткосрочную память..."
+                    : agentPhase === "retrieving"
+                      ? "Ищу релевантные чанки в локальном FAISS-индексе..."
                     : hasSwarmLogs
                       ? "Integrator собирает финальный ответ..."
                       : "Подключаю stream и вызываю LLM..."}
@@ -3149,8 +3219,38 @@ function App() {
                     <dt>mcp call</dt>
                     <dd>{lastReply.debug.mcpToolCall?.toolName ?? "none"}</dd>
                   </div>
+                  <div>
+                    <dt>rag</dt>
+                    <dd>{lastReply.debug.ragEnabled ? lastReply.debug.ragStatus : "off"}</dd>
+                  </div>
+                  <div>
+                    <dt>rag strategy</dt>
+                    <dd>{lastReply.debug.ragStrategy || "none"}</dd>
+                  </div>
+                  <div>
+                    <dt>rag retrieval</dt>
+                    <dd>{lastReply.debug.ragRetrievalMs} ms</dd>
+                  </div>
+                  <div>
+                    <dt>rag context</dt>
+                    <dd>{lastReply.debug.ragContextChars} chars</dd>
+                  </div>
                 </dl>
                 <pre>{lastReply.debug.promptPreview}</pre>
+                <strong>RAG retrieved chunks</strong>
+                {lastReply.debug.ragChunks.length > 0 ? (
+                  <RagSourcesPanel sources={lastReply.debug.ragChunks} />
+                ) : (
+                  <p className="muted-text">
+                    {lastReply.debug.ragEnabled
+                      ? "Релевантные чанки не прошли порог similarity."
+                      : "RAG выключен для последнего ответа."}
+                  </p>
+                )}
+                <strong>RAG context sent to LLM</strong>
+                <pre>
+                  {lastReply.debug.ragContextPreview || "RAG-контекст не добавлялся."}
+                </pre>
                 <strong>MCP tools</strong>
                 {lastReply.debug.mcpTools.length === 0 ? (
                   <p className="muted-text">
@@ -3633,6 +3733,89 @@ function App() {
                     )}
                   </div>
                 )}
+
+                <div className="rag-settings-block">
+                  <label className="checkbox-field compact-checkbox rag-mode-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={settings.documentIndexing.ragEnabled}
+                      disabled={isLoading}
+                      onChange={(event) =>
+                        updateDocumentIndexingSettings({ ragEnabled: event.target.checked })
+                      }
+                    />
+                    <span>
+                      <b>Использовать RAG в ответах агента</b>
+                      <small>
+                        Включено: вопрос ищется в FAISS, а LLM отвечает только по найденным
+                        документам с цитатами. Выключено: обычный ответ модели без RAG.
+                      </small>
+                    </span>
+                  </label>
+
+                  {settings.documentIndexing.ragEnabled && (
+                    <div className="rag-settings-options">
+                      {!settings.documentIndexing.documentsPath.trim() && (
+                        <p className="rag-settings-warning">
+                          Сначала включите индексацию, выберите папку и постройте индекс.
+                        </p>
+                      )}
+                      <div className="mcp-server-grid">
+                        <label className="field">
+                          <span>Стратегия поиска</span>
+                          <select
+                            value={settings.documentIndexing.ragStrategy}
+                            disabled={isLoading}
+                            onChange={(event) =>
+                              updateDocumentIndexingSettings({
+                                ragStrategy: event.target.value as "fixed" | "structural"
+                              })
+                            }
+                          >
+                            <option value="structural">По структуре</option>
+                            <option value="fixed">Фиксированный размер</option>
+                          </select>
+                        </label>
+                        <label className="field">
+                          <span>Top-K чанков</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={20}
+                            value={settings.documentIndexing.ragTopK}
+                            disabled={isLoading}
+                            onChange={(event) =>
+                              updateDocumentIndexingSettings({
+                                ragTopK: Math.max(1, Math.min(20, Number(event.target.value)))
+                              })
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Минимальный similarity score</span>
+                          <input
+                            type="number"
+                            min={-1}
+                            max={1}
+                            step={0.05}
+                            value={settings.documentIndexing.ragMinScore}
+                            disabled={isLoading}
+                            onChange={(event) =>
+                              updateDocumentIndexingSettings({
+                                ragMinScore: Math.max(-1, Math.min(1, Number(event.target.value)))
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <p className="rag-grounding-rule">
+                        <b>Grounding:</b> общие знания модели запрещено выдавать за сведения из
+                        документов. Если найденного контекста недостаточно, агент обязан отказать
+                        в ответе по базе.
+                      </p>
+                    </div>
+                  )}
+                </div>
               </section>
 
               <section className="mcp-settings-section" aria-labelledby="mcp-settings-title">

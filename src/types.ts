@@ -6,6 +6,28 @@ export interface ChatMessage {
   kind?: "text" | "swarm";
   swarm?: SwarmDiscussion;
   mcpSteps?: McpExecutionStep[];
+  ragSources?: RagSourceReference[];
+}
+
+export interface RagSourceReference {
+  citationId: string;
+  faissId: number;
+  chunkId: string;
+  source: string;
+  title: string;
+  section: string;
+  score: number;
+}
+
+export interface RagSettings {
+  enabled: boolean;
+  debug: boolean;
+  pythonCommand: string;
+  documentsPath: string;
+  outputPath: string;
+  strategy: "fixed" | "structural";
+  topK: number;
+  minScore: number;
 }
 
 export interface McpExecutionStep {
@@ -142,6 +164,10 @@ export interface DocumentIndexingSettings {
   structuralChunkSize: number;
   modelName: string;
   batchSize: number;
+  ragEnabled: boolean;
+  ragStrategy: "fixed" | "structural";
+  ragTopK: number;
+  ragMinScore: number;
 }
 
 export interface DocumentIndexingLogEvent {
@@ -214,6 +240,13 @@ export interface MemoryDebugInfo {
   mcpTools: McpTool[];
   mcpToolCall?: McpToolCallInfo;
   mcpToolCalls: McpToolCallInfo[];
+  ragEnabled: boolean;
+  ragStatus: string;
+  ragStrategy: string;
+  ragRetrievalMs: number;
+  ragContextChars: number;
+  ragContextPreview: string;
+  ragChunks: RagSourceReference[];
 }
 
 export interface MemoryDecision {
@@ -235,6 +268,7 @@ export interface AgentReply {
   debug?: MemoryDebugInfo;
   memoryDecisions?: MemoryDecision[];
   taskState?: TaskState;
+  ragSources: RagSourceReference[];
 }
 
 export interface AgentRequest {
@@ -247,12 +281,13 @@ export interface AgentRequest {
   shortTermCompression: ShortTermCompressionSettings;
   orchestration?: OrchestrationSettings;
   mcp?: McpSettings;
+  rag?: RagSettings;
 }
 
 export interface AgentStreamDelta {
   requestId: string;
   delta: string;
-  channel?: "final" | "swarm" | "mcp";
+  channel?: "final" | "swarm" | "mcp" | "rag";
   actor?: string;
   serverName?: string;
 }

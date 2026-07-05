@@ -7,8 +7,8 @@ use agent::{
     AgentSwarmStatus as AgentSwarmStatusPayload,
 };
 use indexing::{
-    run_document_indexing as execute_document_indexing, DocumentIndexingConfig,
-    DocumentIndexingResult,
+    retrieve_rag_context, run_document_indexing as execute_document_indexing,
+    DocumentIndexingConfig, DocumentIndexingResult,
 };
 use mcp::{test_mcp_server, McpConnectionTestResult, McpServerConfig};
 use serde::Serialize;
@@ -42,10 +42,43 @@ struct AgentSwarmStatus {
 #[tauri::command]
 async fn send_agent_message(
     app_handle: AppHandle,
-    request: AgentRequest,
+    mut request: AgentRequest,
 ) -> Result<AgentReply, String> {
-    let agent = Agent::from_request(&request).map_err(|error| error.to_string())?;
     let request_id = request.request_id.clone();
+    if request.rag.enabled {
+        let question = request
+            .messages
+            .iter()
+            .rev()
+            .find(|message| message.role.trim().eq_ignore_ascii_case("user"))
+            .map(|message| message.content.trim().to_owned())
+            .unwrap_or_default();
+        let _ = app_handle.emit(
+            "agent_stream_delta",
+            AgentStreamDelta {
+                request_id: request_id.clone(),
+                delta: "searching".to_owned(),
+                channel: "rag".to_owned(),
+                actor: None,
+                server_name: None,
+            },
+        );
+        let context = retrieve_rag_context(&request.rag, &question).await?;
+        request.rag_context = Some(context);
+        let _ = app_handle.emit(
+            "agent_stream_delta",
+            AgentStreamDelta {
+                request_id: request_id.clone(),
+                delta: "completed".to_owned(),
+                channel: "rag".to_owned(),
+                actor: None,
+                server_name: None,
+            },
+        );
+    } else {
+        request.rag_context = None;
+    }
+    let agent = Agent::from_request(&request).map_err(|error| error.to_string())?;
     let stream_request_id = request.request_id.clone();
     let memory_request_id = request.request_id.clone();
     let swarm_request_id = request.request_id.clone();

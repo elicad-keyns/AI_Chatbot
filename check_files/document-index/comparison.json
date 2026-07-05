@@ -1,28 +1,28 @@
 {
   "fixed": {
-    "dimension": 384,
-    "chunk_count": 1070,
-    "min_chars": 603,
-    "max_chars": 1200,
-    "average_chars": 1034.91,
+    "dimension": 1024,
+    "chunk_count": 731,
+    "min_chars": 761,
+    "max_chars": 2000,
+    "average_chars": 1795.26,
     "short_chunks": 0,
     "sources": 1,
     "sections": 328
   },
   "structural": {
-    "dimension": 384,
-    "chunk_count": 826,
-    "min_chars": 180,
-    "max_chars": 1600,
-    "average_chars": 1236.99,
-    "short_chunks": 6,
+    "dimension": 1024,
+    "chunk_count": 715,
+    "min_chars": 541,
+    "max_chars": 2000,
+    "average_chars": 1595.3,
+    "short_chunks": 0,
     "sources": 1,
     "sections": 328
   },
   "settings": {
-    "fixed_chunk_size": 1200,
-    "fixed_chunk_overlap": 150,
-    "structural_chunk_size": 1600,
-    "embedding_model": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    "fixed_chunk_size": 2000,
+    "fixed_chunk_overlap": 500,
+    "structural_chunk_size": 2000,
+    "embedding_model": "BAAI/bge-m3"
   }
 }

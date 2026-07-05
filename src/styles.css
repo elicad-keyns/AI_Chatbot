@@ -1839,6 +1839,114 @@ button:hover .button-icon {
   background: var(--input-bg);
 }
 
+.rag-mode-button {
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--muted-text);
+  background: var(--muted-bg);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.rag-mode-button.active {
+  border-color: color-mix(in srgb, #1f9d55 52%, var(--border));
+  color: #ffffff;
+  background: #18794e;
+  box-shadow: 0 7px 18px color-mix(in srgb, #1f9d55 24%, transparent);
+}
+
+.rag-mode-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.rag-settings-block,
+.rag-settings-options {
+  display: grid;
+  gap: 12px;
+}
+
+.rag-settings-block {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+}
+
+.rag-mode-checkbox {
+  border-color: color-mix(in srgb, #1f9d55 35%, var(--border));
+}
+
+.rag-settings-warning,
+.rag-grounding-rule {
+  margin: 0;
+  border: 1px solid color-mix(in srgb, #d68c16 45%, var(--border));
+  border-radius: 10px;
+  padding: 10px;
+  color: var(--muted-text);
+  background: color-mix(in srgb, #d68c16 8%, var(--surface-bg));
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.rag-grounding-rule {
+  border-color: color-mix(in srgb, #1f9d55 42%, var(--border));
+  background: color-mix(in srgb, #1f9d55 8%, var(--surface-bg));
+}
+
+.rag-source-panel {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 9px;
+}
+
+.rag-source-label {
+  color: var(--muted-text);
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rag-source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rag-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  border: 1px solid color-mix(in srgb, #1f9d55 35%, var(--border));
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: var(--muted-text);
+  background: color-mix(in srgb, #1f9d55 7%, var(--muted-bg));
+  font-size: 9px;
+}
+
+.rag-source-chip b {
+  color: color-mix(in srgb, #1f9d55 80%, var(--text));
+}
+
+.rag-source-chip span,
+.rag-source-chip code {
+  overflow: hidden;
+  max-width: 180px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rag-source-chip code {
+  max-width: 110px;
+  color: var(--text);
+  background: transparent;
+}
+
 .document-indexing-header,
 .document-indexing-actions {
   display: flex;
