@@ -25,6 +25,9 @@ const RAG_QUERY_REWRITE_MODEL: &str = "gpt-4.1-mini";
 const RAG_QUERY_REWRITE_MAX_OUTPUT_TOKENS: u16 = 160;
 const RAG_QUERY_REWRITE_INSTRUCTIONS: &str = "Rewrite the latest user message into one concise, standalone search query for a local document index. Use the preceding conversation only to resolve references and omitted context. Preserve names, technical terms, numbers, and the user's language. Do not answer the question. Do not explain the rewrite. Output only the search query as plain text.";
 const RAG_UNKNOWN_RESPONSE: &str = "Не знаю: в найденных документах недостаточно релевантной информации. Пожалуйста, уточните вопрос.";
+const TASK_MEMORY_MODEL: &str = "gpt-4.1-mini";
+const TASK_MEMORY_MAX_OUTPUT_TOKENS: u16 = 900;
+const TASK_MEMORY_INSTRUCTIONS: &str = "You maintain compact task memory for one chat. Update it from the existing memory, the latest user message, and the assistant answer. Return JSON only with exactly these keys: goal (string), clarifiedFacts (array of strings), constraints (array of strings), terms (array of strings), openQuestions (array of strings). Preserve still-relevant prior items, add explicit new information, resolve or remove open questions when answered, and never invent facts. The goal describes the user's ongoing objective, not merely the latest question. Keep each list deduplicated and under 12 items. Use the user's language.";
 const MAX_MCP_TOOL_STEPS: usize = 6;
 const MCP_TOOL_ROUTER_INSTRUCTIONS: &str = "You are the MCP tool router for an assistant. \
 Select the next single provided function needed to fulfill the user's latest request. You may be \
@@ -362,6 +365,7 @@ pub struct AgentReply {
     pub debug: MemoryDebugInfo,
     pub memory_decisions: Vec<MemoryDecision>,
     pub task_state: Option<TaskState>,
+    pub task_memory: Option<TaskMemory>,
     pub rag_sources: Vec<RagSourceReference>,
     pub rag_process: Option<RagProcessInfo>,
     pub rag_citations: Vec<RagCitationQuote>,
@@ -427,6 +431,23 @@ pub struct MemoryContext {
     pub long_term: Vec<MemoryItem>,
     #[serde(default)]
     pub task_state: Option<TaskState>,
+    #[serde(default)]
+    pub task_memory: Option<TaskMemory>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskMemory {
+    #[serde(default)]
+    pub goal: String,
+    #[serde(default)]
+    pub clarified_facts: Vec<String>,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    #[serde(default)]
+    pub terms: Vec<String>,
+    #[serde(default)]
+    pub open_questions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -669,7 +690,11 @@ impl Agent {
         }
     }
 
-    fn insufficient_rag_reply(&self, input_message_count: usize) -> AgentReply {
+    fn insufficient_rag_reply(
+        &self,
+        input_message_count: usize,
+        task_memory: TaskMemory,
+    ) -> AgentReply {
         let mut debug = build_memory_debug(&self.memory_context, input_message_count, "");
         self.apply_rag_debug(&mut debug);
         AgentReply {
@@ -680,6 +705,7 @@ impl Agent {
             debug,
             memory_decisions: Vec::new(),
             task_state: self.memory_context.task_state.clone(),
+            task_memory: Some(task_memory),
             rag_sources: Vec::new(),
             rag_process: self.rag_process_info(),
             rag_citations: Vec::new(),
@@ -694,7 +720,7 @@ impl Agent {
     }
 
     pub async fn rewrite_rag_query(&self, messages: &[ChatMessage]) -> Result<String, String> {
-        let conversation = messages
+        let mut conversation = messages
             .iter()
             .rev()
             .filter(|message| !message.content.trim().is_empty())
@@ -711,6 +737,14 @@ impl Agent {
             })
             .collect::<Vec<_>>()
             .join("\n");
+        if let Some(task_memory) = self.memory_context.task_memory.as_ref() {
+            let task_memory = serde_json::to_string(task_memory).unwrap_or_default();
+            if !task_memory.is_empty() {
+                conversation.push_str(&format!(
+                    "\n\ntask_memory_for_reference_resolution: {task_memory}"
+                ));
+            }
+        }
         if conversation.trim().is_empty() {
             return Err("No conversation available for RAG query rewrite.".to_owned());
         }
@@ -749,6 +783,49 @@ impl Agent {
         } else {
             Ok(rewritten)
         }
+    }
+
+    async fn update_task_memory(&self, user_message: &str, assistant_reply: &str) -> TaskMemory {
+        let existing = self.memory_context.task_memory.clone().unwrap_or_default();
+        let input = json!({
+            "existingTaskMemory": existing,
+            "latestUserMessage": preview_text(user_message, 4000),
+            "assistantAnswer": preview_text(assistant_reply, 4000)
+        })
+        .to_string();
+        let body = json!({
+            "model": TASK_MEMORY_MODEL,
+            "instructions": TASK_MEMORY_INSTRUCTIONS,
+            "input": input,
+            "max_output_tokens": TASK_MEMORY_MAX_OUTPUT_TOKENS
+        });
+
+        let parsed = match self
+            .client
+            .post("https://api.openai.com/v1/responses")
+            .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
+            .header(CONTENT_TYPE, "application/json")
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(response) if response.status().is_success() => response
+                .text()
+                .await
+                .ok()
+                .and_then(|text| serde_json::from_str::<OpenAIResponse>(&text).ok())
+                .and_then(|response| response.extract_text())
+                .and_then(|text| parse_task_memory_json(&text)),
+            _ => None,
+        };
+
+        normalize_task_memory(parsed.unwrap_or_else(|| {
+            let mut fallback = existing;
+            if fallback.goal.trim().is_empty() {
+                fallback.goal = preview_text(user_message, 500);
+            }
+            fallback
+        }))
     }
 
     fn apply_rag_debug(&self, debug: &mut MemoryDebugInfo) {
@@ -992,6 +1069,12 @@ impl Agent {
             return Err(AgentError::EmptyMessages);
         }
         self.ensure_not_cancelled()?;
+        let latest_user_message = messages
+            .iter()
+            .rev()
+            .find(|message| normalize_role(&message.role) == "user")
+            .map(|message| message.content.trim().to_owned())
+            .unwrap_or_default();
 
         if self.rag_context.as_ref().is_some_and(|context| {
             context.chunks.is_empty()
@@ -1001,7 +1084,11 @@ impl Agent {
                     .all(|chunk| chunk.score < context.min_score)
         }) {
             on_delta(AgentStreamChunk::final_delta(None, RAG_UNKNOWN_RESPONSE));
-            return Ok(self.insufficient_rag_reply(messages.len()));
+            on_memory_started();
+            let task_memory = self
+                .update_task_memory(&latest_user_message, RAG_UNKNOWN_RESPONSE)
+                .await;
+            return Ok(self.insufficient_rag_reply(messages.len(), task_memory));
         }
 
         if self.orchestration.enabled {
@@ -1017,12 +1104,6 @@ impl Agent {
                 .await;
         }
 
-        let latest_user_message = messages
-            .iter()
-            .rev()
-            .find(|message| normalize_role(&message.role) == "user")
-            .map(|message| message.content.trim().to_owned())
-            .unwrap_or_default();
         let mcp_context = self
             .prepare_agentic_mcp_context(&messages, &mut on_delta)
             .await;
@@ -1174,6 +1255,9 @@ impl Agent {
         self.apply_rag_debug(&mut debug);
         on_memory_started();
         self.ensure_not_cancelled()?;
+        let task_memory = self
+            .update_task_memory(&latest_user_message, &content)
+            .await;
         let memory_router_result = self.classify_memory(&latest_user_message, &content).await;
         debug.memory_router_input = preview_text(&memory_router_result.raw_input, 4000);
         debug.memory_router_raw = preview_text(&memory_router_result.raw_output, 4000);
@@ -1186,6 +1270,7 @@ impl Agent {
             debug,
             memory_decisions: memory_router_result.decisions,
             task_state: None,
+            task_memory: Some(task_memory),
             rag_sources: self.rag_source_references(),
             rag_process: self.rag_process_info(),
             rag_citations: validated_rag.citations,
@@ -1509,6 +1594,9 @@ impl Agent {
 
         on_memory_started();
         self.ensure_not_cancelled()?;
+        let task_memory = self
+            .update_task_memory(&latest_user_message, &content)
+            .await;
         let memory_router_result = self.classify_memory(&latest_user_message, &content).await;
         debug.memory_router_input = preview_text(&memory_router_result.raw_input, 4000);
         debug.memory_router_raw = preview_text(&memory_router_result.raw_output, 4000);
@@ -1521,6 +1609,7 @@ impl Agent {
             debug,
             memory_decisions: memory_router_result.decisions,
             task_state: Some(task_state),
+            task_memory: Some(task_memory),
             rag_sources: self.rag_source_references(),
             rag_process: self.rag_process_info(),
             rag_citations: validated_rag.citations,
@@ -3099,6 +3188,7 @@ fn build_memory_instruction(memory: &MemoryContext) -> String {
 
     sections.push(format_user_profile(memory.active_profile.as_ref()));
     sections.push(format_task_state(memory.task_state.as_ref()));
+    sections.push(format_task_memory(memory.task_memory.as_ref()));
 
     sections.push(format_memory_items(
         "Working memory",
@@ -3113,6 +3203,37 @@ fn build_memory_instruction(memory: &MemoryContext) -> String {
     ));
 
     sections.join("\n\n")
+}
+
+fn format_task_memory(task_memory: Option<&TaskMemory>) -> String {
+    let Some(task_memory) = task_memory else {
+        return "Per-chat task memory: no goal or clarifications captured yet.".to_owned();
+    };
+    format!(
+        "Per-chat task memory (preserve this objective across follow-up turns):\n\
+         goal: {}\n\
+         clarifiedFacts: {}\n\
+         constraints: {}\n\
+         terms: {}\n\
+         openQuestions: {}",
+        preview_text(&task_memory.goal, 600),
+        format_task_memory_list(&task_memory.clarified_facts),
+        format_task_memory_list(&task_memory.constraints),
+        format_task_memory_list(&task_memory.terms),
+        format_task_memory_list(&task_memory.open_questions),
+    )
+}
+
+fn format_task_memory_list(items: &[String]) -> String {
+    if items.is_empty() {
+        "none".to_owned()
+    } else {
+        items
+            .iter()
+            .map(|item| preview_text(item, 260))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
 }
 
 fn build_memory_instruction_for_task_state(
@@ -3383,6 +3504,38 @@ fn clean_rag_query(value: &str) -> String {
         .trim_matches(['\'', '"', '`']);
     let compact = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
     preview_text(&compact, 500)
+}
+
+fn parse_task_memory_json(value: &str) -> Option<TaskMemory> {
+    let trimmed = value
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    let start = trimmed.find('{')?;
+    let end = trimmed.rfind('}')?;
+    serde_json::from_str::<TaskMemory>(&trimmed[start..=end]).ok()
+}
+
+fn normalize_task_memory(mut memory: TaskMemory) -> TaskMemory {
+    memory.goal = preview_text(memory.goal.trim(), 600);
+    memory.clarified_facts = normalize_task_memory_list(memory.clarified_facts);
+    memory.constraints = normalize_task_memory_list(memory.constraints);
+    memory.terms = normalize_task_memory_list(memory.terms);
+    memory.open_questions = normalize_task_memory_list(memory.open_questions);
+    memory
+}
+
+fn normalize_task_memory_list(items: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    items
+        .into_iter()
+        .map(|item| preview_text(item.trim(), 300))
+        .filter(|item| !item.is_empty())
+        .filter(|item| seen.insert(item.to_lowercase()))
+        .take(12)
+        .collect()
 }
 
 fn normalize_role(role: &str) -> &'static str {
@@ -3703,6 +3856,7 @@ mod tests {
                 is_cancelled: false,
                 updated_at: "2026-01-01T00:00:00Z".to_owned(),
             }),
+            task_memory: None,
         };
 
         let input = build_memory_router_input(
@@ -3736,6 +3890,7 @@ mod tests {
             working: Vec::new(),
             long_term: Vec::new(),
             task_state: None,
+            task_memory: None,
         };
 
         let instruction = build_memory_instruction(&memory);
@@ -4142,5 +4297,46 @@ mod tests {
             chunk,
             "Трудовой договор прекращается... Работодатель обязан перевести работника"
         ));
+    }
+
+    #[test]
+    fn parses_and_deduplicates_task_memory_json() {
+        let parsed = parse_task_memory_json(
+            "```json\n{\"goal\":\"Подготовить памятку\",\"clarifiedFacts\":[\"Работник отказался\",\"Работник отказался\"],\"constraints\":[\"Только по ТК РФ\"],\"terms\":[\"медицинское заключение\"],\"openQuestions\":[\"Какой срок перевода?\"]}\n```",
+        )
+        .map(normalize_task_memory)
+        .expect("task memory JSON should parse");
+
+        assert_eq!(parsed.goal, "Подготовить памятку");
+        assert_eq!(parsed.clarified_facts, vec!["Работник отказался"]);
+        assert_eq!(parsed.constraints, vec!["Только по ТК РФ"]);
+        assert_eq!(parsed.terms, vec!["медицинское заключение"]);
+        assert_eq!(parsed.open_questions, vec!["Какой срок перевода?"]);
+    }
+
+    #[test]
+    fn task_memory_is_included_in_prompt_context() {
+        let memory = MemoryContext {
+            active_profile: None,
+            short_term: Vec::new(),
+            short_term_summary: None,
+            working: Vec::new(),
+            long_term: Vec::new(),
+            task_state: None,
+            task_memory: Some(TaskMemory {
+                goal: "Составить HR-памятку о переводе работника".to_owned(),
+                clarified_facts: vec!["Перевод требуется по медзаключению".to_owned()],
+                constraints: vec!["Ссылаться только на ТК РФ".to_owned()],
+                terms: vec!["временный перевод".to_owned()],
+                open_questions: vec!["Каков срок перевода?".to_owned()],
+            }),
+        };
+
+        let instruction = build_memory_instruction(&memory);
+
+        assert!(instruction.contains("Per-chat task memory"));
+        assert!(instruction.contains("Составить HR-памятку"));
+        assert!(instruction.contains("Ссылаться только на ТК РФ"));
+        assert!(instruction.contains("Каков срок перевода?"));
     }
 }

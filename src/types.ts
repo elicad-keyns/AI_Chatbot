@@ -145,6 +145,14 @@ export interface TaskState {
   updatedAt: string;
 }
 
+export interface TaskMemory {
+  goal: string;
+  clarifiedFacts: string[];
+  constraints: string[];
+  terms: string[];
+  openQuestions: string[];
+}
+
 export interface OrchestrationSettings {
   enabled: boolean;
   action?: OrchestratorAction;
@@ -246,6 +254,7 @@ export interface MemoryContext {
   working: MemoryItem[];
   longTerm: MemoryItem[];
   taskState?: TaskState;
+  taskMemory?: TaskMemory;
 }
 
 export interface MemoryDebugInfo {
@@ -311,6 +320,7 @@ export interface AgentReply {
   debug?: MemoryDebugInfo;
   memoryDecisions?: MemoryDecision[];
   taskState?: TaskState;
+  taskMemory?: TaskMemory;
   ragSources: RagSourceReference[];
   ragProcess?: RagProcessInfo;
   ragCitations: RagCitationQuote[];

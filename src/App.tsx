@@ -27,6 +27,7 @@ import type {
   ShortTermSummary,
   SwarmDiscussion,
   TaskPhase,
+  TaskMemory,
   TaskState,
   UserProfile
 } from "./types";
@@ -197,6 +198,7 @@ interface ChatSession {
   title: string;
   messages: ChatMessage[];
   shortTermSummary?: ShortTermSummary;
+  taskMemory: TaskMemory;
   createdAt: string;
   updatedAt: string;
 }
@@ -276,8 +278,19 @@ function createEmptyChat(): ChatSession {
     id: crypto.randomUUID(),
     title: "Новый чат",
     messages: [],
+    taskMemory: createEmptyTaskMemory(),
     createdAt: now,
     updatedAt: now
+  };
+}
+
+function createEmptyTaskMemory(): TaskMemory {
+  return {
+    goal: "",
+    clarifiedFacts: [],
+    constraints: [],
+    terms: [],
+    openQuestions: []
   };
 }
 
@@ -453,11 +466,30 @@ function loadChats(): ChatSession[] {
             .map((message) => normalizeChatMessage(message))
             .filter((message): message is ChatMessage => Boolean(message))
         : [],
-      shortTermSummary: normalizeShortTermSummary(chat.shortTermSummary)
+      shortTermSummary: normalizeShortTermSummary(chat.shortTermSummary),
+      taskMemory: normalizeTaskMemory(chat.taskMemory)
     }));
   } catch {
     return [createEmptyChat()];
   }
+}
+
+function normalizeTaskMemory(value: Partial<TaskMemory> | undefined): TaskMemory {
+  const normalizeList = (items: unknown): string[] =>
+    Array.isArray(items)
+      ? items
+          .filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+          .map((item) => item.trim())
+          .slice(0, 12)
+      : [];
+
+  return {
+    goal: typeof value?.goal === "string" ? value.goal.trim() : "",
+    clarifiedFacts: normalizeList(value?.clarifiedFacts),
+    constraints: normalizeList(value?.constraints),
+    terms: normalizeList(value?.terms),
+    openQuestions: normalizeList(value?.openQuestions)
+  };
 }
 
 function normalizeShortTermSummary(
@@ -1125,7 +1157,60 @@ function RagGroundingPanel({
           ))}
         </div>
       )}
+      {citations.length === 0 && (
+        <div className="rag-no-sources">Источники: релевантные документы не найдены.</div>
+      )}
     </section>
+  );
+}
+
+function TaskMemoryPanel({ memory }: { memory: TaskMemory }) {
+  const groups = [
+    { label: "Уточнено", items: memory.clarifiedFacts },
+    { label: "Ограничения", items: memory.constraints },
+    { label: "Термины", items: memory.terms },
+    { label: "Открытые вопросы", items: memory.openQuestions }
+  ].filter((group) => group.items.length > 0);
+
+  if (!memory.goal.trim() && groups.length === 0) {
+    return null;
+  }
+  const detailCount = groups.reduce((total, group) => total + group.items.length, 0);
+
+  return (
+    <article
+      className="message assistant task-memory-message"
+      aria-label="Память задачи текущего чата"
+    >
+      <div className="message-header task-memory-header">
+        <div className="message-meta">Память задачи</div>
+        <span>только этот чат</span>
+      </div>
+      {memory.goal.trim() && (
+        <div className="task-memory-goal">
+          <small>Цель диалога</small>
+          <b>{memory.goal}</b>
+        </div>
+      )}
+      {groups.length > 0 && (
+        <details className="task-memory-details">
+          <summary>
+            <span>Контекст задачи</span>
+            <small>{detailCount} записей</small>
+          </summary>
+          <div className="task-memory-groups">
+            {groups.map((group) => (
+              <div className="task-memory-group" key={group.label}>
+                <small>{group.label}</small>
+                <ul>
+                  {group.items.map((item) => <li key={`${group.label}-${item}`}>{item}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </article>
   );
 }
 
@@ -1434,6 +1519,7 @@ function App() {
   const activeModelLabel = activeModelOption?.label ?? settings.model;
   const messages = activeChat?.messages ?? [];
   const hasMessages = messages.length > 0;
+  const taskMemory = activeChat?.taskMemory ?? createEmptyTaskMemory();
   const shortTermSummary =
     settings.shortTermCompressionEnabled ? activeChat?.shortTermSummary : undefined;
   const shortTermCompression: ShortTermCompressionSettings = useMemo(
@@ -1451,7 +1537,8 @@ function App() {
       shortTermSummary,
       working: workingMemory,
       longTerm: longTermMemory,
-      taskState
+      taskState,
+      taskMemory
     }),
     [
       activeProfileForRequest,
@@ -1459,7 +1546,8 @@ function App() {
       shortTermSummary,
       workingMemory,
       longTermMemory,
-      taskState
+      taskState,
+      taskMemory
     ]
   );
 
@@ -1947,7 +2035,8 @@ function App() {
 
   function updateActiveChat(
     messagesForChat: ChatMessage[],
-    nextShortTermSummary?: ShortTermSummary | null
+    nextShortTermSummary?: ShortTermSummary | null,
+    nextTaskMemory?: TaskMemory | null
   ) {
     const now = new Date().toISOString();
 
@@ -1964,6 +2053,12 @@ function App() {
                   : nextShortTermSummary === null
                     ? undefined
                     : nextShortTermSummary,
+              taskMemory:
+                nextTaskMemory === undefined
+                  ? chat.taskMemory
+                  : nextTaskMemory === null
+                    ? createEmptyTaskMemory()
+                    : normalizeTaskMemory(nextTaskMemory),
               updatedAt: now
             }
           : chat
@@ -1985,7 +2080,7 @@ function App() {
   }
 
   function clearChat() {
-    updateActiveChat([], null);
+    updateActiveChat([], null, null);
     setLastReply(null);
     setAgentPhase("idle");
     setStreamingContent("");
@@ -2181,6 +2276,7 @@ function App() {
     let requestMcpSteps: McpExecutionStep[] = [];
     const previousMessages = activeChat.messages;
     const requestTaskState = taskState;
+    const requestTaskMemory = activeChat.taskMemory;
     const optimisticTaskState = settings.orchestrationEnabled
       ? getOptimisticTaskStateForAction(requestTaskState, orchestratorAction, text)
       : undefined;
@@ -2308,7 +2404,8 @@ function App() {
         shortTermSummary,
         working: workingMemory,
         longTerm: longTermMemory,
-        taskState: requestTaskState
+        taskState: requestTaskState,
+        taskMemory: requestTaskMemory
       };
 
       const reply = await invoke<AgentReply>("send_agent_message", {
@@ -2383,7 +2480,11 @@ function App() {
       if (reply.taskState) {
         setTaskState(normalizeTaskState(reply.taskState));
       }
-      updateActiveChat(completedMessages, nextShortTermSummary);
+      updateActiveChat(
+        completedMessages,
+        nextShortTermSummary,
+        normalizeTaskMemory(reply.taskMemory ?? requestTaskMemory)
+      );
       setLastMemoryWrites([
         ...memoryWrites,
         ...applyMemoryDecisions(reply.memoryDecisions, text, activeChat.id)
@@ -2844,6 +2945,8 @@ function App() {
               )}
             </article>
           ))}
+
+          <TaskMemoryPanel memory={taskMemory} />
 
           {isLoading && (
             <article className="message assistant">

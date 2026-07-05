@@ -2142,6 +2142,131 @@ button:hover .button-icon {
   color: #b42318;
 }
 
+.rag-no-sources {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 7px;
+  color: var(--muted-text);
+  font-size: 9px;
+}
+
+.task-memory-message {
+  border-color: color-mix(in srgb, #6b5bd2 38%, var(--border)) !important;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #6b5bd2 8%, transparent), transparent 58%),
+    var(--surface-bg) !important;
+}
+
+.task-memory-header {
+  margin-bottom: 10px;
+}
+
+.task-memory-header > span {
+  border: 1px solid color-mix(in srgb, #6b5bd2 28%, var(--border));
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: var(--muted-text);
+  font-size: 9px;
+}
+
+.task-memory-goal {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+  border-radius: 10px;
+  padding: 9px 10px;
+  background: color-mix(in srgb, #6b5bd2 7%, var(--muted-bg));
+}
+
+.task-memory-goal small,
+.task-memory-group > small {
+  color: var(--muted-text);
+  font-size: 9px;
+}
+
+.task-memory-goal b {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.task-memory-details {
+  margin-top: 9px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 8px;
+}
+
+.task-memory-details summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  list-style: none;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.task-memory-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.task-memory-details summary::after {
+  content: "⌄";
+  color: var(--muted-text);
+  font-size: 13px;
+  transition: transform 0.16s ease;
+}
+
+.task-memory-details[open] summary::after {
+  transform: rotate(180deg);
+}
+
+.task-memory-details summary small {
+  margin-left: auto;
+  color: var(--muted-text);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.task-memory-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.task-memory-group {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 8px;
+  background: color-mix(in srgb, var(--input-bg) 78%, transparent);
+}
+
+.task-memory-group ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 15px;
+}
+
+.task-memory-group li {
+  color: var(--muted-text);
+  font-size: 9px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .task-memory-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
 .rag-source-panel {
   display: grid;
   gap: 6px;
