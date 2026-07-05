@@ -1830,6 +1830,152 @@ button:hover .button-icon {
   background: var(--input-bg);
 }
 
+.document-indexing-settings {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--input-bg);
+}
+
+.document-indexing-header,
+.document-indexing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.document-indexing-header > div,
+.document-indexing-options,
+.indexing-result {
+  display: grid;
+  gap: 5px;
+}
+
+.document-indexing-header b {
+  font-size: 15px;
+}
+
+.document-indexing-header small {
+  color: var(--muted-text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.indexing-status {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted-text);
+  background: var(--surface-bg);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.indexing-status.running {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  color: var(--primary);
+}
+
+.indexing-status.success,
+.indexing-result.success {
+  border-color: color-mix(in srgb, #1f9d55 48%, var(--border));
+  color: color-mix(in srgb, #1f9d55 78%, var(--text));
+}
+
+.indexing-status.error,
+.indexing-result.error {
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.compact-checkbox {
+  padding: 10px;
+  background: var(--surface-bg);
+}
+
+.document-indexing-options {
+  gap: 12px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+}
+
+.document-indexing-actions {
+  justify-content: flex-start;
+}
+
+.document-indexing-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.field-with-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px;
+}
+
+.field-with-action input {
+  min-width: 0;
+}
+
+.field-with-action .ghost-button {
+  padding: 9px 11px;
+  white-space: nowrap;
+}
+
+.indexing-result {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--surface-bg);
+  font-size: 12px;
+}
+
+.indexing-result code,
+.indexing-result span {
+  overflow-wrap: anywhere;
+}
+
+.indexing-log {
+  display: grid;
+  gap: 4px;
+  max-height: 230px;
+  overflow: auto;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 9px;
+  color: #cbd5e1;
+  background: #111827;
+  font: 11px/1.45 Consolas, "Courier New", monospace;
+}
+
+.indexing-log > div {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 7px;
+}
+
+.indexing-log time {
+  color: #64748b;
+}
+
+.indexing-log .log-warning,
+.indexing-log .log-stderr {
+  color: #fbbf24;
+}
+
+.indexing-log .log-error {
+  color: #fca5a5;
+}
+
+.indexing-log .log-result {
+  color: #86efac;
+}
+
 .mcp-settings-header,
 .mcp-server-card-header,
 .mcp-env-header,

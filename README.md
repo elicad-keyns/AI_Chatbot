@@ -89,6 +89,68 @@ cd src-tauri
 cargo check
 ```
 
+## День 21. Индексация документов
+
+В настройках приложения находится блок **«Индексация документов»**. Функция по
+умолчанию выключена. После включения пользователь выбирает папку через системный
+диалог Windows и может настроить размеры чанков,
+локальную embedding-модель, batch size и подробный debug-журнал.
+
+Поддерживаемые входные данные: Markdown, TXT/RST, JSON/YAML/TOML, HTML/CSS,
+Python, Rust, JavaScript/TypeScript и PDF. Служебные каталоги (`.git`,
+`node_modules`, `dist`, `target`, generated-каталоги, lock-файлы, виртуальные окружения и папка результата)
+автоматически исключаются.
+
+Перед первым запуском установите Python 3.10+ и зависимости. Рекомендуемый
+вариант — отдельное окружение проекта:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-indexing.txt
+```
+
+В поле «Команда Python» по умолчанию используется
+`.venv\Scripts\python.exe`. Если там осталось значение `python`, backend также
+автоматически попробует локальное `.venv` перед обращением к системной команде.
+
+Пайплайн строит две независимые версии корпуса:
+
+- `fixed` — равномерные чанки заданного размера с перекрытием;
+- `structural` — сначала границы файлов, Markdown/RST-заголовков и конструкций
+  кода, затем дополнительное деление слишком больших разделов.
+
+Результат по умолчанию записывается в `document-index`:
+
+```text
+document-index/
+├── fixed/
+│   ├── index.faiss
+│   └── metadata.json
+├── structural/
+│   ├── index.faiss
+│   └── metadata.json
+├── comparison.json
+└── comparison.md
+```
+
+Каждый JSON-чанк содержит `faiss_id`, `chunk_id`, `source`, `title`, `section`,
+`strategy`, `char_count` и `text`. `faiss_id` равен позиции в FAISS, поэтому
+вектор однозначно связан с метаданными. В интерфейсе во время работы показываются
+этапы discovery, loading, chunking, embeddings и saving. Debug-режим дополнительно
+показывает сведения по каждому файлу.
+
+Проверить семантический поиск после построения можно командой:
+
+```bash
+python scripts/search_index.py "как работает память" --strategy structural
+```
+
+Автоматические проверки chunking запускаются так:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
 ## День 16. Подключение MCP
 
 В приложении реализован MCP-клиент для локальных `stdio`-серверов и удалённых

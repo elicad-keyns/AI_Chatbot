@@ -1,11 +1,15 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import type {
   AgentReply,
   AgentMemoryStarted,
   AgentSwarmStatus,
   ChatMessage,
+  DocumentIndexingLogEvent,
+  DocumentIndexingResult,
+  DocumentIndexingSettings,
   MemoryContext,
   MemoryDecision,
   MemoryItem,
@@ -181,6 +185,7 @@ interface AppSettings {
   mcpServers: McpServerConfig[];
   validatorInvariants: string;
   debugManualStateControls: boolean;
+  documentIndexing: DocumentIndexingSettings;
 }
 
 interface ChatSession {
@@ -239,7 +244,19 @@ const DEFAULT_SETTINGS: AppSettings = {
     }
   ],
   validatorInvariants: DEFAULT_VALIDATOR_INVARIANTS,
-  debugManualStateControls: false
+  debugManualStateControls: false,
+  documentIndexing: {
+    enabled: false,
+    debug: false,
+    pythonCommand: ".venv\\Scripts\\python.exe",
+    documentsPath: "",
+    outputPath: "document-index",
+    fixedChunkSize: 1200,
+    fixedChunkOverlap: 150,
+    structuralChunkSize: 1600,
+    modelName: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+    batchSize: 32
+  }
 };
 
 function createEmptyChat(): ChatSession {
@@ -324,6 +341,10 @@ function loadSettings(): AppSettings {
     return {
       ...DEFAULT_SETTINGS,
       ...parsed,
+      documentIndexing: {
+        ...DEFAULT_SETTINGS.documentIndexing,
+        ...(parsed.documentIndexing ?? {})
+      },
       mcpServers,
       shortTermCompressionTurnLimit: normalizeCompressionTurnLimit(
         parsed.shortTermCompressionTurnLimit
@@ -1130,6 +1151,10 @@ function App() {
   const [mcpConnectionTests, setMcpConnectionTests] = useState<
     Record<string, McpConnectionTestResult>
   >({});
+  const [isIndexingDocuments, setIsIndexingDocuments] = useState(false);
+  const [indexingLogs, setIndexingLogs] = useState<DocumentIndexingLogEvent[]>([]);
+  const [indexingResult, setIndexingResult] = useState<DocumentIndexingResult | null>(null);
+  const [indexingError, setIndexingError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
@@ -1268,6 +1293,18 @@ function App() {
   }, [settings]);
 
   useEffect(() => {
+    const unlistenPromise = listen<DocumentIndexingLogEvent>(
+      "document_indexing_log",
+      (event) => {
+        setIndexingLogs((current) => [...current.slice(-299), event.payload]);
+      }
+    );
+    return () => {
+      void unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
+
+  useEffect(() => {
     if (!settings.autoScroll) {
       return;
     }
@@ -1337,6 +1374,59 @@ function App() {
           ? current.shortTermCompressionTurnLimit
           : normalizeCompressionTurnLimit(nextSettings.shortTermCompressionTurnLimit)
     }));
+  }
+
+  function updateDocumentIndexingSettings(
+    nextSettings: Partial<DocumentIndexingSettings>
+  ) {
+    setSettings((current) => ({
+      ...current,
+      documentIndexing: {
+        ...current.documentIndexing,
+        ...nextSettings
+      }
+    }));
+  }
+
+  async function startDocumentIndexing() {
+    if (!settings.documentIndexing.enabled || isIndexingDocuments) {
+      return;
+    }
+    if (!settings.documentIndexing.documentsPath.trim()) {
+      setIndexingError("Сначала выберите папку с документами");
+      return;
+    }
+    setIsIndexingDocuments(true);
+    setIndexingLogs([]);
+    setIndexingResult(null);
+    setIndexingError(null);
+    try {
+      const result = await invoke<DocumentIndexingResult>("run_document_indexing", {
+        config: settings.documentIndexing
+      });
+      setIndexingResult(result);
+    } catch (caughtError) {
+      setIndexingError(String(caughtError));
+    } finally {
+      setIsIndexingDocuments(false);
+    }
+  }
+
+  async function chooseDocumentsFolder() {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Выберите папку с документами"
+      });
+      if (typeof selected === "string") {
+        updateDocumentIndexingSettings({ documentsPath: selected });
+        setIndexingError(null);
+        setIndexingResult(null);
+      }
+    } catch (caughtError) {
+      setIndexingError(`Не удалось открыть выбор папки: ${String(caughtError)}`);
+    }
   }
 
   function updateMcpServer(serverId: string, patch: Partial<McpServerConfig>) {
@@ -3308,6 +3398,242 @@ function App() {
                   </small>
                 </span>
               </label>
+
+              <section
+                className="document-indexing-settings"
+                aria-labelledby="document-indexing-title"
+              >
+                <div className="document-indexing-header">
+                  <div>
+                    <b id="document-indexing-title">Индексация документов</b>
+                    <small>
+                      Два локальных FAISS-индекса: фиксированный и структурный chunking.
+                      Тексты и метаданные сохраняются в JSON.
+                    </small>
+                  </div>
+                  <span
+                    className={`indexing-status ${
+                      isIndexingDocuments ? "running" : indexingResult ? "success" : indexingError ? "error" : ""
+                    }`}
+                  >
+                    {isIndexingDocuments
+                      ? "Выполняется"
+                      : indexingResult
+                        ? "Готово"
+                        : indexingError
+                          ? "Ошибка"
+                          : settings.documentIndexing.enabled
+                            ? "Включено"
+                            : "Выключено"}
+                  </span>
+                </div>
+
+                <label className="checkbox-field compact-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={settings.documentIndexing.enabled}
+                    disabled={isIndexingDocuments}
+                    onChange={(event) =>
+                      updateDocumentIndexingSettings({ enabled: event.target.checked })
+                    }
+                  />
+                  <span>
+                    <b>Включить индексацию</b>
+                    <small>
+                      При выключенном флаге запуск заблокирован и на frontend, и в backend.
+                    </small>
+                  </span>
+                </label>
+
+                {settings.documentIndexing.enabled && (
+                  <div className="document-indexing-options">
+                    <div className="mcp-server-grid">
+                      <label className="field">
+                        <span>Папка документов</span>
+                        <div className="field-with-action">
+                          <input
+                            value={settings.documentIndexing.documentsPath}
+                            disabled={isIndexingDocuments}
+                            onChange={(event) =>
+                              updateDocumentIndexingSettings({ documentsPath: event.target.value })
+                            }
+                            placeholder="Выберите папку"
+                            spellCheck={false}
+                          />
+                          <button
+                            className="ghost-button"
+                            type="button"
+                            disabled={isIndexingDocuments}
+                            onClick={() => void chooseDocumentsFolder()}
+                          >
+                            Выбрать…
+                          </button>
+                        </div>
+                        <small>
+                          Все поддерживаемые файлы внутри папки будут добавлены в локальный индекс.
+                        </small>
+                      </label>
+                      <label className="field">
+                        <span>Папка результата</span>
+                        <input
+                          value={settings.documentIndexing.outputPath}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ outputPath: event.target.value })
+                          }
+                          placeholder="document-index"
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Команда Python</span>
+                        <input
+                          value={settings.documentIndexing.pythonCommand}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ pythonCommand: event.target.value })
+                          }
+                          placeholder="python"
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Модель эмбеддингов</span>
+                        <input
+                          value={settings.documentIndexing.modelName}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ modelName: event.target.value })
+                          }
+                          spellCheck={false}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Размер fixed-чанка</span>
+                        <input
+                          type="number"
+                          min={200}
+                          value={settings.documentIndexing.fixedChunkSize}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ fixedChunkSize: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Перекрытие</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={settings.documentIndexing.fixedChunkOverlap}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ fixedChunkOverlap: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Максимум structural-чанка</span>
+                        <input
+                          type="number"
+                          min={200}
+                          value={settings.documentIndexing.structuralChunkSize}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ structuralChunkSize: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Batch size</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={256}
+                          value={settings.documentIndexing.batchSize}
+                          disabled={isIndexingDocuments}
+                          onChange={(event) =>
+                            updateDocumentIndexingSettings({ batchSize: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <label className="checkbox-field compact-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={settings.documentIndexing.debug}
+                        disabled={isIndexingDocuments}
+                        onChange={(event) =>
+                          updateDocumentIndexingSettings({ debug: event.target.checked })
+                        }
+                      />
+                      <span>
+                        <b>Подробный debug-журнал</b>
+                        <small>
+                          Показывает каждый загруженный файл, число символов, разделы и этапы модели.
+                        </small>
+                      </span>
+                    </label>
+
+                    <div className="document-indexing-actions">
+                      <button
+                        className="primary-button"
+                        type="button"
+                        disabled={
+                          isIndexingDocuments || !settings.documentIndexing.documentsPath.trim()
+                        }
+                        onClick={() => void startDocumentIndexing()}
+                      >
+                        {isIndexingDocuments ? "Индексация…" : "Построить индексы"}
+                      </button>
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        disabled={isIndexingDocuments || indexingLogs.length === 0}
+                        onClick={() => setIndexingLogs([])}
+                      >
+                        Очистить журнал
+                      </button>
+                    </div>
+
+                    {indexingResult?.summary && (
+                      <div className="indexing-result success">
+                        <b>Индекс построен</b>
+                        <span>
+                          Документов: {indexingResult.summary.documents ?? 0} · символов:{" "}
+                          {indexingResult.summary.total_characters ?? 0} · страниц ≈{" "}
+                          {indexingResult.summary.estimated_pages ?? 0} · fixed:{" "}
+                          {indexingResult.summary.fixed?.chunk_count ?? 0} · structural:{" "}
+                          {indexingResult.summary.structural?.chunk_count ?? 0}
+                        </span>
+                        <code>{indexingResult.summary.output_path}</code>
+                      </div>
+                    )}
+                    {indexingError && (
+                      <div className="indexing-result error">
+                        <b>Индексация не выполнена</b>
+                        <span>{indexingError}</span>
+                        <code>.\.venv\Scripts\python.exe -m pip install -r requirements-indexing.txt</code>
+                      </div>
+                    )}
+                    {(isIndexingDocuments || indexingLogs.length > 0) && (
+                      <div className="indexing-log" role="log" aria-live="polite">
+                        {indexingLogs.length === 0 ? (
+                          <span>Запуск Python-пайплайна…</span>
+                        ) : (
+                          indexingLogs.map((log, index) => (
+                            <div className={`log-${log.payload.type}`} key={`${index}-${log.payload.type}`}>
+                              <time>{String(index + 1).padStart(3, "0")}</time>
+                              <span>{log.payload.message ?? JSON.stringify(log.payload)}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </section>
 
               <section className="mcp-settings-section" aria-labelledby="mcp-settings-title">
                 <div className="mcp-settings-header">

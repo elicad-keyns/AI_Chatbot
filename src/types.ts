@@ -131,6 +131,45 @@ export interface McpConnectionTestResult {
   tools: McpTool[];
 }
 
+export interface DocumentIndexingSettings {
+  enabled: boolean;
+  debug: boolean;
+  pythonCommand: string;
+  documentsPath: string;
+  outputPath: string;
+  fixedChunkSize: number;
+  fixedChunkOverlap: number;
+  structuralChunkSize: number;
+  modelName: string;
+  batchSize: number;
+}
+
+export interface DocumentIndexingLogEvent {
+  stream: "stdout" | "stderr";
+  payload: {
+    type: string;
+    message?: string;
+    stage?: string;
+    current?: number;
+    total?: number;
+    [key: string]: unknown;
+  };
+}
+
+export interface DocumentIndexingResult {
+  success: boolean;
+  summary: {
+    output_path?: string;
+    documents?: number;
+    total_characters?: number;
+    estimated_pages?: number;
+    duration_seconds?: number;
+    fixed?: { chunk_count?: number };
+    structural?: { chunk_count?: number };
+    [key: string]: unknown;
+  };
+}
+
 export interface MemoryContext {
   activeProfile?: UserProfile;
   shortTerm: ChatMessage[];

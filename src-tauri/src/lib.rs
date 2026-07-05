@@ -1,9 +1,14 @@
 mod agent;
+mod indexing;
 mod mcp;
 
 use agent::{
     cancel_agent_request, clear_agent_request, Agent, AgentReply, AgentRequest, AgentStreamChunk,
     AgentSwarmStatus as AgentSwarmStatusPayload,
+};
+use indexing::{
+    run_document_indexing as execute_document_indexing, DocumentIndexingConfig,
+    DocumentIndexingResult,
 };
 use mcp::{test_mcp_server, McpConnectionTestResult, McpServerConfig};
 use serde::Serialize;
@@ -100,12 +105,22 @@ async fn test_mcp_connection(server: McpServerConfig) -> McpConnectionTestResult
     test_mcp_server(server).await
 }
 
+#[tauri::command]
+async fn run_document_indexing(
+    app_handle: AppHandle,
+    config: DocumentIndexingConfig,
+) -> Result<DocumentIndexingResult, String> {
+    execute_document_indexing(app_handle, config).await
+}
+
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             send_agent_message,
             cancel_agent_message,
-            test_mcp_connection
+            test_mcp_connection,
+            run_document_indexing
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,6 +3,10 @@ dist
 target
 .env
 .env.local
+.venv/
 src-tauri/target
 src-tauri/gen
 /summaries
+/document-index
+__pycache__/
+*.pyc
